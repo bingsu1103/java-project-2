@@ -53,3 +53,4 @@ ehthumbs.db
 # Chat data
 chat-data/
 downloads/
+dependency-reduced-pom.xml
