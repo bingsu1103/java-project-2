@@ -11,6 +11,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.HashMap;
 
 /**
  * Main application window shown after successful login.
@@ -34,7 +35,8 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     private JList<String> userList;
     private JLabel userCountLabel;
     private JLabel statusLabel;
-    private JPanel chatAreaPanel; // Placeholder for chat tabs (Phase 7+8)
+    private JTabbedPane chatTabs;
+    private final HashMap<String, ChatPanel> openChats = new HashMap<>();
 
     // --- State ---
     private ChatClient chatClient;
@@ -67,9 +69,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         JPanel sidebar = createSidebar();
         add(sidebar, BorderLayout.WEST);
 
-        // --- Center: Chat Area ---
-        chatAreaPanel = createChatArea();
-        add(chatAreaPanel, BorderLayout.CENTER);
+        // --- Center: Chat Tabs ---
+        chatTabs = createChatTabs();
+        add(chatTabs, BorderLayout.CENTER);
 
         // --- Bottom: Status Bar ---
         JPanel statusBar = createStatusBar();
@@ -166,17 +168,22 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         return sidebar;
     }
 
-    private JPanel createChatArea() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(BG_CONTENT);
+    private JTabbedPane createChatTabs() {
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setBackground(BG_CONTENT);
+        tabs.setForeground(FG_TEXT);
+        tabs.setFont(new Font("Segoe UI", Font.PLAIN, 13));
 
-        // Placeholder - will be replaced with JTabbedPane in Phase 7/8
+        // Welcome tab
+        JPanel welcomePanel = new JPanel(new BorderLayout());
+        welcomePanel.setBackground(BG_CONTENT);
         JLabel placeholder = new JLabel("Double-click a user to start chatting", SwingConstants.CENTER);
         placeholder.setFont(new Font("Segoe UI", Font.PLAIN, 16));
         placeholder.setForeground(FG_HINT);
-        panel.add(placeholder, BorderLayout.CENTER);
+        welcomePanel.add(placeholder, BorderLayout.CENTER);
+        tabs.addTab("Welcome", welcomePanel);
 
-        return panel;
+        return tabs;
     }
 
     private JPanel createStatusBar() {
@@ -195,10 +202,73 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     // --- Actions ---
 
     private void onUserDoubleClicked(String targetUser) {
-        // TODO: Open chat tab with targetUser (Phase 7)
-        JOptionPane.showMessageDialog(this,
-                "Chat with " + targetUser + " - Coming in next phase!",
-                "Chat", JOptionPane.INFORMATION_MESSAGE);
+        openChatTab(targetUser);
+    }
+
+    /**
+     * Open or focus a chat tab for the given user.
+     */
+    private void openChatTab(String targetUser) {
+        // If tab already open, switch to it
+        if (openChats.containsKey(targetUser)) {
+            ChatPanel existing = openChats.get(targetUser);
+            int index = chatTabs.indexOfComponent(existing);
+            if (index >= 0) {
+                chatTabs.setSelectedIndex(index);
+            }
+            return;
+        }
+
+        // Create new ChatPanel
+        ChatPanel chatPanel = new ChatPanel(username, targetUser);
+        chatPanel.setSendListener((target, text) -> {
+            chatClient.sendTextMessage(username, target, text);
+        });
+
+        // Add tab with close button
+        openChats.put(targetUser, chatPanel);
+        chatTabs.addTab(targetUser, chatPanel);
+        int tabIndex = chatTabs.indexOfComponent(chatPanel);
+        chatTabs.setTabComponentAt(tabIndex, createTabHeader(targetUser));
+        chatTabs.setSelectedIndex(tabIndex);
+    }
+
+    /**
+     * Create a tab header with title and close button.
+     */
+    private JPanel createTabHeader(String title) {
+        JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        header.setOpaque(false);
+
+        JLabel label = new JLabel(title);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        header.add(label);
+
+        JButton closeBtn = new JButton("×");
+        closeBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        closeBtn.setForeground(FG_HINT);
+        closeBtn.setBorderPainted(false);
+        closeBtn.setContentAreaFilled(false);
+        closeBtn.setFocusPainted(false);
+        closeBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        closeBtn.setPreferredSize(new Dimension(20, 20));
+        closeBtn.addActionListener(e -> closeChatTab(title));
+        header.add(closeBtn);
+
+        return header;
+    }
+
+    /**
+     * Close a chat tab.
+     */
+    private void closeChatTab(String targetUser) {
+        ChatPanel panel = openChats.remove(targetUser);
+        if (panel != null) {
+            int index = chatTabs.indexOfComponent(panel);
+            if (index >= 0) {
+                chatTabs.removeTabAt(index);
+            }
+        }
     }
 
     private void onExit() {
@@ -225,6 +295,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                     break;
                 case USER_OFFLINE:
                     handleUserOffline(message.getContent());
+                    break;
+                case TEXT:
+                    handleIncomingText(message);
                     break;
                 default:
                     break;
@@ -267,6 +340,23 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     private void handleUserOffline(String user) {
         userListModel.removeElement(user);
         updateUserCount();
+    }
+
+    private void handleIncomingText(Message message) {
+        String sender = message.getSender();
+        // Auto-open tab if not open
+        if (!openChats.containsKey(sender)) {
+            openChatTab(sender);
+        }
+        ChatPanel panel = openChats.get(sender);
+        if (panel != null) {
+            panel.appendMessage(sender, message.getContent(), false);
+            // Flash tab if not currently selected
+            int tabIndex = chatTabs.indexOfComponent(panel);
+            if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
+                chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
+            }
+        }
     }
 
     private void updateUserCount() {
