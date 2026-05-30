@@ -1,5 +1,7 @@
 package com.chatapp.server;
 
+import com.chatapp.server.gui.ServerFrame;
+
 import javax.swing.*;
 
 /**
@@ -7,9 +9,16 @@ import javax.swing.*;
  */
 public class ServerApp {
     public static void main(String[] args) {
+        // Set look and feel
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            // Fallback to default LAF
+        }
+
         SwingUtilities.invokeLater(() -> {
-            System.out.println("Chat Server - Starting...");
-            // TODO: Initialize Server GUI
+            ServerFrame serverFrame = new ServerFrame();
+            serverFrame.setVisible(true);
         });
     }
 }
