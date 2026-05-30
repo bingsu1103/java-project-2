@@ -1,6 +1,7 @@
 package com.chatapp.client;
 
 import com.chatapp.client.gui.LoginFrame;
+import com.chatapp.client.gui.MainFrame;
 
 import javax.swing.*;
 
@@ -19,9 +20,11 @@ public class ClientApp {
         SwingUtilities.invokeLater(() -> {
             LoginFrame loginFrame = new LoginFrame();
             loginFrame.setLoginCallback((client, username) -> {
-                // TODO: Open MainFrame after successful login
-                System.out.println("Login successful! User: " + username);
                 loginFrame.dispose();
+                SwingUtilities.invokeLater(() -> {
+                    MainFrame mainFrame = new MainFrame(client, username);
+                    mainFrame.setVisible(true);
+                });
             });
             loginFrame.setVisible(true);
         });
