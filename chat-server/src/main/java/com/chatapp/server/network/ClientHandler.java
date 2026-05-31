@@ -1,5 +1,6 @@
 package com.chatapp.server.network;
 
+import com.chatapp.common.model.ChatGroup;
 import com.chatapp.common.model.Message;
 import com.chatapp.common.protocol.MessageType;
 import com.chatapp.common.protocol.Protocol;
@@ -9,6 +10,7 @@ import java.io.*;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Handles communication with a single connected client.
@@ -69,6 +71,12 @@ public class ClientHandler implements Runnable {
                 break;
             case TEXT:
                 handleTextMessage(message);
+                break;
+            case GROUP_TEXT:
+                handleGroupText(message);
+                break;
+            case GROUP_CREATE:
+                handleGroupCreate(message);
                 break;
             case FILE_SEND:
                 handleFileMessage(message);
@@ -178,9 +186,6 @@ public class ClientHandler implements Runnable {
         }
     }
 
-    /**
-     * Handle file transfer: forward file data to the receiver.
-     */
     private void handleFileMessage(Message message) {
         String receiver = message.getReceiver();
         if (receiver == null || receiver.trim().isEmpty()) {
@@ -197,6 +202,47 @@ public class ClientHandler implements Runnable {
         } else {
             log(username + " sent file '" + message.getFileName() + "' to " + receiver);
         }
+    }
+
+    private void handleGroupCreate(Message message) {
+        String groupName = message.getContent();
+        String groupId = UUID.randomUUID().toString();
+        
+        ChatGroup group = new ChatGroup(groupId, groupName, username);
+        
+        // Members list could be sent in receiver field or fileData, for now just creator
+        // Let's assume the client sends comma separated members in receiver field
+        String memberList = message.getReceiver();
+        if (memberList != null && !memberList.isEmpty()) {
+            for (String member : memberList.split(",")) {
+                group.addMember(member.trim());
+            }
+        }
+        
+        ServerManager.getInstance().addGroup(group);
+        
+        // Notify members
+        Message success = new Message(MessageType.GROUP_CREATE_SUCCESS, "SERVER", username, groupName);
+        success.setReceiver(groupId); // use receiver field to pass group ID
+        
+        for (String member : group.getMembers()) {
+            if (ServerManager.getInstance().isOnline(member)) {
+                ServerManager.getInstance().sendToUser(member, success);
+            }
+        }
+        log("Group created: " + groupName + " by " + username);
+    }
+
+    private void handleGroupText(Message message) {
+        String groupId = message.getReceiver(); // For group text, receiver is groupId
+        ChatGroup group = ServerManager.getInstance().getGroup(groupId);
+        if (group == null) {
+            sendMessage(Message.systemMessage(MessageType.ERROR, "Group not found."));
+            return;
+        }
+        
+        // Broadcast to group members
+        ServerManager.getInstance().sendToGroup(groupId, message);
     }
 
     /**

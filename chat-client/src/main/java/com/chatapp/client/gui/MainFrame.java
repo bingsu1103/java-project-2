@@ -38,6 +38,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     private JLabel statusLabel;
     private JTabbedPane chatTabs;
     private final HashMap<String, ChatPanel> openChats = new HashMap<>();
+    private final HashMap<String, String> groupNames = new HashMap<>();
 
     // --- State ---
     private ChatClient chatClient;
@@ -126,11 +127,30 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         JPanel listPanel = new JPanel(new BorderLayout());
         listPanel.setBackground(BG_SIDEBAR);
 
+        JPanel titlePanel = new JPanel(new BorderLayout());
+        titlePanel.setBackground(BG_SIDEBAR);
+
         JLabel listTitle = new JLabel("  Online Users");
         listTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
         listTitle.setForeground(FG_HINT);
         listTitle.setBorder(new EmptyBorder(10, 10, 5, 10));
-        listPanel.add(listTitle, BorderLayout.NORTH);
+        
+        JButton createGroupBtn = new JButton("👥 New Group");
+        createGroupBtn.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        createGroupBtn.setForeground(FG_TEXT);
+        createGroupBtn.setBackground(new Color(60, 60, 65));
+        createGroupBtn.setFocusPainted(false);
+        createGroupBtn.setBorder(new EmptyBorder(4, 8, 4, 8));
+        createGroupBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        createGroupBtn.addActionListener(e -> onCreateGroupClicked());
+        
+        JPanel btnPanel = new JPanel();
+        btnPanel.setOpaque(false);
+        btnPanel.add(createGroupBtn);
+        
+        titlePanel.add(listTitle, BorderLayout.WEST);
+        titlePanel.add(btnPanel, BorderLayout.EAST);
+        listPanel.add(titlePanel, BorderLayout.NORTH);
 
         userListModel = new DefaultListModel<>();
         userList = new JList<>(userListModel);
@@ -212,6 +232,43 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         openChatTab(targetUser);
     }
 
+    private void onCreateGroupClicked() {
+        String groupName = JOptionPane.showInputDialog(this, "Enter Group Name:", "New Group", JOptionPane.PLAIN_MESSAGE);
+        if (groupName == null || groupName.trim().isEmpty()) return;
+        
+        Object[] users = new Object[userListModel.size()];
+        for (int i = 0; i < userListModel.size(); i++) {
+            users[i] = userListModel.getElementAt(i);
+        }
+        
+        if (users.length == 0) {
+            JOptionPane.showMessageDialog(this, "No other users online to add.", "Warning", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        JList<Object> list = new JList<>(users);
+        list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        JScrollPane scrollPane = new JScrollPane(list);
+        scrollPane.setPreferredSize(new Dimension(200, 150));
+        
+        int result = JOptionPane.showConfirmDialog(this, scrollPane, "Select Members", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result == JOptionPane.OK_OPTION) {
+            java.util.List<Object> selected = list.getSelectedValuesList();
+            if (selected.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "You must select at least one member.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            StringBuilder members = new StringBuilder(username);
+            for (Object obj : selected) {
+                members.append(",").append(obj.toString());
+            }
+            
+            Message createMsg = new Message(MessageType.GROUP_CREATE, username, members.toString(), groupName);
+            chatClient.sendMessage(createMsg);
+        }
+    }
+
     /**
      * Open or focus a chat tab for the given user.
      */
@@ -248,14 +305,43 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         openChats.put(targetUser, chatPanel);
         chatTabs.addTab(targetUser, chatPanel);
         int tabIndex = chatTabs.indexOfComponent(chatPanel);
-        chatTabs.setTabComponentAt(tabIndex, createTabHeader(targetUser));
+        chatTabs.setTabComponentAt(tabIndex, createTabHeader(targetUser, targetUser));
+        chatTabs.setSelectedIndex(tabIndex);
+    }
+
+    private void openGroupChatTab(String groupId, String groupName) {
+        if (openChats.containsKey(groupId)) {
+            ChatPanel existing = openChats.get(groupId);
+            int index = chatTabs.indexOfComponent(existing);
+            if (index >= 0) chatTabs.setSelectedIndex(index);
+            return;
+        }
+
+        ChatPanel chatPanel = new ChatPanel(username, groupName + " (Group)");
+        chatPanel.setSendListener(new ChatPanel.ChatSendListener() {
+            @Override
+            public void onSendMessage(String target, String text) {
+                Message msg = new Message(MessageType.GROUP_TEXT, username, groupId, text);
+                chatClient.sendMessage(msg);
+            }
+            @Override
+            public void onSendFile(String target, String fileName, byte[] data) {
+                // File to group not fully implemented yet
+                JOptionPane.showMessageDialog(MainFrame.this, "File sending to groups coming soon!");
+            }
+        });
+
+        openChats.put(groupId, chatPanel);
+        chatTabs.addTab(groupName, chatPanel);
+        int tabIndex = chatTabs.indexOfComponent(chatPanel);
+        chatTabs.setTabComponentAt(tabIndex, createTabHeader(groupName, groupId));
         chatTabs.setSelectedIndex(tabIndex);
     }
 
     /**
      * Create a tab header with title and close button.
      */
-    private JPanel createTabHeader(String title) {
+    private JPanel createTabHeader(String title, String targetId) {
         JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         header.setOpaque(false);
 
@@ -273,7 +359,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         closeBtn.setMargin(new Insets(0, 0, 0, 0));
         closeBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         closeBtn.setPreferredSize(new Dimension(20, 20));
-        closeBtn.addActionListener(e -> closeChatTab(title));
+        closeBtn.addActionListener(e -> closeChatTab(targetId));
         header.add(closeBtn);
 
         return header;
@@ -319,6 +405,15 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                     break;
                 case TEXT:
                     handleIncomingText(message);
+                    break;
+                case GROUP_CREATE_SUCCESS:
+                    String groupId = message.getReceiver();
+                    String groupName = message.getContent();
+                    groupNames.put(groupId, groupName);
+                    openGroupChatTab(groupId, groupName);
+                    break;
+                case GROUP_TEXT:
+                    handleIncomingGroupText(message);
                     break;
                 case FILE_RECEIVE:
                     handleIncomingFile(message);
@@ -376,6 +471,22 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         if (panel != null) {
             panel.appendMessage(sender, message.getContent(), false);
             // Flash tab if not currently selected
+            int tabIndex = chatTabs.indexOfComponent(panel);
+            if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
+                chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
+            }
+        }
+    }
+
+    private void handleIncomingGroupText(Message message) {
+        String groupId = message.getReceiver();
+        if (!openChats.containsKey(groupId)) {
+            String groupName = groupNames.getOrDefault(groupId, "Group Chat");
+            openGroupChatTab(groupId, groupName);
+        }
+        ChatPanel panel = openChats.get(groupId);
+        if (panel != null) {
+            panel.appendMessage(message.getSender(), message.getContent(), false);
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);

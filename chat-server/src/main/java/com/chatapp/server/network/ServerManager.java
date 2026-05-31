@@ -4,6 +4,7 @@ import com.chatapp.common.model.Message;
 import com.chatapp.common.protocol.Protocol;
 
 import java.io.PrintWriter;
+import com.chatapp.common.model.ChatGroup;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -15,9 +16,11 @@ public class ServerManager {
 
     private static ServerManager instance;
     private final ConcurrentHashMap<String, ClientHandler> connectedClients;
+    private final ConcurrentHashMap<String, ChatGroup> groups;
 
     private ServerManager() {
         connectedClients = new ConcurrentHashMap<>();
+        groups = new ConcurrentHashMap<>();
     }
 
     public static synchronized ServerManager getInstance() {
@@ -88,6 +91,33 @@ public class ServerManager {
         for (ClientHandler handler : connectedClients.values()) {
             handler.sendMessage(message);
         }
+    }
+
+    // --- Group Management ---
+
+    public void addGroup(ChatGroup group) {
+        groups.put(group.getGroupId(), group);
+    }
+
+    public ChatGroup getGroup(String groupId) {
+        return groups.get(groupId);
+    }
+
+    public boolean sendToGroup(String groupId, Message message) {
+        ChatGroup group = groups.get(groupId);
+        if (group == null) return false;
+
+        for (String member : group.getMembers()) {
+            // Don't echo back to the sender
+            if (!member.equals(message.getSender())) {
+                sendToUser(member, message);
+            }
+        }
+        return true;
+    }
+
+    public Collection<ChatGroup> getAllGroups() {
+        return groups.values();
     }
 
     /**
