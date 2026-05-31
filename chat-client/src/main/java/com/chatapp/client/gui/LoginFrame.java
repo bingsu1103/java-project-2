@@ -267,7 +267,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         switchModeButton.setOpaque(false);
         switchModeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         switchModeButton.setHorizontalAlignment(SwingConstants.CENTER);
-        switchModeButton.addActionListener(e -> toggleMode());
+        switchModeButton.addActionListener(e -> toggleMode(true));
         g.gridy = r++; g.insets = new Insets(0, 0, 0, 0);
         panel.add(switchModeButton, g);
 
@@ -382,7 +382,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         registerTimeoutTimer.start();
     }
 
-    private void toggleMode() {
+    private void toggleMode(boolean clearMessage) {
         isLoginMode = !isLoginMode;
         if (isLoginMode) {
             loginButton.setVisible(true);
@@ -395,7 +395,9 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
             if (authLabel != null) authLabel.setText("Register");
             switchModeButton.setText("<html><u>Already have an account? Login</u></html>");
         }
-        messageLabel.setText(" ");
+        if (clearMessage) {
+            messageLabel.setText(" ");
+        }
     }
 
     // --- State changes ---
@@ -455,9 +457,9 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
                     showMessage(message.getContent(), ACCENT_GREEN);
                     registerButton.setEnabled(true);
                     registerButton.setText("Register");
-                    // Auto switch to login mode
+                    // Auto switch to login mode without clearing message
                     if (!isLoginMode) {
-                        toggleMode();
+                        toggleMode(false);
                     }
                     break;
 
