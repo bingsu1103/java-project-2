@@ -43,6 +43,8 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     private JButton switchModeButton;
     private JLabel messageLabel;
     private JLabel authLabel;
+    private Timer loginTimeoutTimer;
+    private Timer registerTimeoutTimer;
 
     private boolean isLoginMode = true;
     private boolean isConnected = false;
@@ -245,13 +247,14 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         // Login button
         loginButton = createStyledButton("Login", ACCENT_GREEN);
         loginButton.addActionListener(this::onLoginClicked);
-        loginButton.setEnabled(false);
+        loginButton.setEnabled(true);
         g.gridy = r++; g.insets = new Insets(0, 0, 6, 0);
         panel.add(loginButton, g);
 
         // Register button (hidden)
         registerButton = createStyledButton("Register", ACCENT_BLUE);
         registerButton.addActionListener(this::onRegisterClicked);
+        registerButton.setEnabled(true);
         registerButton.setVisible(false);
         g.gridy = r++; g.insets = new Insets(0, 0, 10, 0);
         panel.add(registerButton, g);
@@ -322,10 +325,15 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     }
 
     private void onLoginClicked(ActionEvent e) {
+        if (!isConnected) {
+            showMessage("Please connect to a server first.", ACCENT_RED);
+            return;
+        }
+
         String username = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
 
-        if (username.isEmpty() || password.isEmpty()) {
+        if (username.isEmpty() || password.isEmpty() || username.equals("Username")) {
             showMessage("Please enter username and password.", ACCENT_RED);
             return;
         }
@@ -334,13 +342,32 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         loginButton.setEnabled(false);
         loginButton.setText("Logging in...");
         chatClient.login(username, password);
+
+        // Start timeout timer
+        if (loginTimeoutTimer != null) {
+            loginTimeoutTimer.stop();
+        }
+        loginTimeoutTimer = new Timer(5000, evt -> {
+            SwingUtilities.invokeLater(() -> {
+                loginButton.setEnabled(true);
+                loginButton.setText("Login");
+                showMessage("Login timeout. Please check server.", ACCENT_RED);
+            });
+        });
+        loginTimeoutTimer.setRepeats(false);
+        loginTimeoutTimer.start();
     }
 
     private void onRegisterClicked(ActionEvent e) {
+        if (!isConnected) {
+            showMessage("Please connect to a server first.", ACCENT_RED);
+            return;
+        }
+
         String username = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
 
-        if (username.isEmpty() || password.isEmpty()) {
+        if (username.isEmpty() || password.isEmpty() || username.equals("Username")) {
             showMessage("Please enter username and password.", ACCENT_RED);
             return;
         }
@@ -348,6 +375,20 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         registerButton.setEnabled(false);
         registerButton.setText("Registering...");
         chatClient.register(username, password);
+
+        // Start timeout timer
+        if (registerTimeoutTimer != null) {
+            registerTimeoutTimer.stop();
+        }
+        registerTimeoutTimer = new Timer(5000, evt -> {
+            SwingUtilities.invokeLater(() -> {
+                registerButton.setEnabled(true);
+                registerButton.setText("Register");
+                showMessage("Registration timeout. Please check server.", ACCENT_RED);
+            });
+        });
+        registerTimeoutTimer.setRepeats(false);
+        registerTimeoutTimer.start();
     }
 
     private void toggleMode() {
@@ -377,8 +418,6 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         connectionStatus.setForeground(ACCENT_GREEN);
         hostField.setEnabled(false);
         portField.setEnabled(false);
-        loginButton.setEnabled(true);
-        registerButton.setEnabled(true);
         showMessage("Connected to server!", ACCENT_GREEN);
     }
 
@@ -391,8 +430,6 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         connectionStatus.setForeground(ACCENT_RED);
         hostField.setEnabled(true);
         portField.setEnabled(true);
-        loginButton.setEnabled(false);
-        registerButton.setEnabled(false);
         showMessage("Disconnected from server.", FG_HINT);
     }
 
@@ -408,6 +445,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         SwingUtilities.invokeLater(() -> {
             switch (message.getType()) {
                 case LOGIN_SUCCESS:
+                    if (loginTimeoutTimer != null) loginTimeoutTimer.stop();
                     showMessage("Login successful!", ACCENT_GREEN);
                     if (callback != null) {
                         callback.onLoginSuccess(chatClient, currentUsername);
@@ -415,12 +453,14 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
                     break;
 
                 case LOGIN_FAIL:
+                    if (loginTimeoutTimer != null) loginTimeoutTimer.stop();
                     showMessage(message.getContent(), ACCENT_RED);
                     loginButton.setEnabled(true);
                     loginButton.setText("Login");
                     break;
 
                 case REGISTER_SUCCESS:
+                    if (registerTimeoutTimer != null) registerTimeoutTimer.stop();
                     showMessage(message.getContent(), ACCENT_GREEN);
                     registerButton.setEnabled(true);
                     registerButton.setText("Register");
@@ -431,6 +471,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
                     break;
 
                 case REGISTER_FAIL:
+                    if (registerTimeoutTimer != null) registerTimeoutTimer.stop();
                     showMessage(message.getContent(), ACCENT_RED);
                     registerButton.setEnabled(true);
                     registerButton.setText("Register");
