@@ -225,22 +225,13 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
 
         // Username
         usernameField = createStyledTextField("");
-        usernameField.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(70, 70, 75)),
-                new EmptyBorder(8, 12, 8, 12)));
         addPlaceholder(usernameField, "Username");
         g.gridy = r++; g.insets = new Insets(0, 0, 8, 0);
         panel.add(usernameField, g);
 
         // Password
         passwordField = new JPasswordField();
-        passwordField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        passwordField.setBackground(BG_INPUT);
-        passwordField.setForeground(FG_TEXT);
-        passwordField.setCaretColor(FG_TEXT);
-        passwordField.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(70, 70, 75)),
-                new EmptyBorder(8, 12, 8, 12)));
+        setupTextComponent(passwordField);
         g.gridy = r++; g.insets = new Insets(0, 0, 12, 0);
         panel.add(passwordField, g);
 
@@ -564,17 +555,28 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         }
     }
 
-    // --- Helper methods ---
-
-    private JTextField createStyledTextField(String text) {
-        JTextField field = new JTextField(text);
+    private void setupTextComponent(javax.swing.text.JTextComponent field) {
         field.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         field.setBackground(BG_INPUT);
         field.setForeground(FG_TEXT);
         field.setCaretColor(FG_TEXT);
+        field.setSelectionColor(new Color(50, 160, 255, 120)); // Beautiful translucent blue
+        field.setSelectedTextColor(Color.WHITE);
         field.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 75)),
                 new EmptyBorder(8, 12, 8, 12)));
+
+        // Support macOS Cmd shortcut mappings (Cmd+C, Cmd+V, Cmd+X, Cmd+A)
+        InputMap im = field.getInputMap(JComponent.WHEN_FOCUSED);
+        im.put(KeyStroke.getKeyStroke("meta C"), javax.swing.text.DefaultEditorKit.copyAction);
+        im.put(KeyStroke.getKeyStroke("meta V"), javax.swing.text.DefaultEditorKit.pasteAction);
+        im.put(KeyStroke.getKeyStroke("meta X"), javax.swing.text.DefaultEditorKit.cutAction);
+        im.put(KeyStroke.getKeyStroke("meta A"), javax.swing.text.DefaultEditorKit.selectAllAction);
+    }
+
+    private JTextField createStyledTextField(String text) {
+        JTextField field = new JTextField(text);
+        setupTextComponent(field);
         return field;
     }
 
