@@ -91,10 +91,37 @@ public class ChatPanel extends JPanel {
         nameLabel.setForeground(FG_TEXT);
         header.add(nameLabel, BorderLayout.WEST);
 
+        JPanel rightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        rightPanel.setOpaque(false);
+
+        JButton clearBtn = new JButton("🗑️ Clear");
+        clearBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        clearBtn.setForeground(FG_HINT);
+        clearBtn.setBackground(new Color(60, 60, 65));
+        clearBtn.setFocusPainted(false);
+        clearBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        clearBtn.addActionListener(e -> {
+            int result = JOptionPane.showConfirmDialog(this, "Clear history for this chat?", "Confirm", JOptionPane.YES_NO_OPTION);
+            if (result == JOptionPane.YES_OPTION) {
+                if (sendListener != null) {
+                    sendListener.onClearHistory(targetName);
+                }
+                try {
+                    messageArea.getDocument().remove(0, messageArea.getDocument().getLength());
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
+
         JLabel statusLabel = new JLabel("Online ●");
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         statusLabel.setForeground(new Color(46, 160, 67));
-        header.add(statusLabel, BorderLayout.EAST);
+
+        rightPanel.add(clearBtn);
+        rightPanel.add(statusLabel);
+
+        header.add(rightPanel, BorderLayout.EAST);
 
         return header;
     }
@@ -456,5 +483,6 @@ public class ChatPanel extends JPanel {
     public interface ChatSendListener {
         void onSendMessage(String target, String text);
         void onSendFile(String target, String fileName, byte[] data);
+        void onClearHistory(String target);
     }
 }

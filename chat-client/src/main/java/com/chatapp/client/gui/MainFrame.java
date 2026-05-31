@@ -4,6 +4,7 @@ import com.chatapp.client.network.ChatClient;
 import com.chatapp.common.model.Message;
 import com.chatapp.common.protocol.MessageType;
 import com.chatapp.common.protocol.Protocol;
+import com.chatapp.client.history.ChatHistoryManager;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -40,14 +41,25 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     private final HashMap<String, ChatPanel> openChats = new HashMap<>();
     private final HashMap<String, String> groupNames = new HashMap<>();
 
+    private static class GroupItem {
+        String id;
+        String name;
+        GroupItem(String id, String name) { this.id = id; this.name = name; }
+        @Override public String toString() { return name; }
+    }
+    private DefaultListModel<GroupItem> groupListModel;
+    private JList<GroupItem> groupList;
+
     // --- State ---
     private ChatClient chatClient;
     private String username;
+    private ChatHistoryManager historyManager;
 
     public MainFrame(ChatClient chatClient, String username) {
         super("Chat App - " + username);
         this.chatClient = chatClient;
         this.username = username;
+        this.historyManager = new ChatHistoryManager(username);
         this.chatClient.addListener(this);
 
         initUI();
@@ -184,7 +196,59 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         userCountLabel.setBorder(new EmptyBorder(5, 10, 8, 10));
         listPanel.add(userCountLabel, BorderLayout.SOUTH);
 
-        sidebar.add(listPanel, BorderLayout.CENTER);
+        // --- Groups List ---
+        JPanel groupsPanel = new JPanel(new BorderLayout());
+        groupsPanel.setBackground(BG_SIDEBAR);
+
+        JLabel groupTitle = new JLabel("  My Groups");
+        groupTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        groupTitle.setForeground(FG_HINT);
+        groupTitle.setBorder(new EmptyBorder(10, 10, 5, 10));
+        groupsPanel.add(groupTitle, BorderLayout.NORTH);
+
+        groupListModel = new DefaultListModel<>();
+        groupList = new JList<>(groupListModel);
+        groupList.setBackground(BG_SIDEBAR);
+        groupList.setForeground(FG_TEXT);
+        groupList.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        groupList.setSelectionBackground(ACCENT_BLUE);
+        groupList.setSelectionForeground(Color.WHITE);
+        groupList.setFixedCellHeight(36);
+        groupList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                label.setText("  👥 " + value.toString());
+                label.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                label.setBorder(new EmptyBorder(4, 10, 4, 10));
+                if (isSelected) { label.setBackground(ACCENT_BLUE); label.setForeground(Color.WHITE); }
+                else { label.setBackground(BG_SIDEBAR); label.setForeground(FG_TEXT); }
+                return label;
+            }
+        });
+        groupList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    GroupItem selected = groupList.getSelectedValue();
+                    if (selected != null) {
+                        openGroupChatTab(selected.id, selected.name);
+                    }
+                }
+            }
+        });
+
+        JScrollPane groupScroll = new JScrollPane(groupList);
+        groupScroll.setBorder(null);
+        groupScroll.getViewport().setBackground(BG_SIDEBAR);
+        groupsPanel.add(groupScroll, BorderLayout.CENTER);
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, listPanel, groupsPanel);
+        splitPane.setDividerSize(2);
+        splitPane.setBorder(null);
+        splitPane.setResizeWeight(0.6); // 60% for users, 40% for groups
+        
+        sidebar.add(splitPane, BorderLayout.CENTER);
 
         return sidebar;
     }
@@ -236,32 +300,40 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         String groupName = JOptionPane.showInputDialog(this, "Enter Group Name:", "New Group", JOptionPane.PLAIN_MESSAGE);
         if (groupName == null || groupName.trim().isEmpty()) return;
         
-        Object[] users = new Object[userListModel.size()];
-        for (int i = 0; i < userListModel.size(); i++) {
-            users[i] = userListModel.getElementAt(i);
-        }
-        
-        if (users.length == 0) {
+        if (userListModel.isEmpty()) {
             JOptionPane.showMessageDialog(this, "No other users online to add.", "Warning", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
-        JList<Object> list = new JList<>(users);
-        list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        JScrollPane scrollPane = new JScrollPane(list);
+        JPanel cbPanel = new JPanel();
+        cbPanel.setLayout(new BoxLayout(cbPanel, BoxLayout.Y_AXIS));
+        java.util.List<JCheckBox> checkBoxes = new java.util.ArrayList<>();
+        
+        for (int i = 0; i < userListModel.size(); i++) {
+            String u = userListModel.getElementAt(i);
+            JCheckBox cb = new JCheckBox(u);
+            checkBoxes.add(cb);
+            cbPanel.add(cb);
+        }
+        
+        JScrollPane scrollPane = new JScrollPane(cbPanel);
         scrollPane.setPreferredSize(new Dimension(200, 150));
         
         int result = JOptionPane.showConfirmDialog(this, scrollPane, "Select Members", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result == JOptionPane.OK_OPTION) {
-            java.util.List<Object> selected = list.getSelectedValuesList();
+            java.util.List<String> selected = new java.util.ArrayList<>();
+            for (JCheckBox cb : checkBoxes) {
+                if (cb.isSelected()) selected.add(cb.getText());
+            }
+            
             if (selected.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "You must select at least one member.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
             StringBuilder members = new StringBuilder(username);
-            for (Object obj : selected) {
-                members.append(",").append(obj.toString());
+            for (String user : selected) {
+                members.append(",").append(user);
             }
             
             Message createMsg = new Message(MessageType.GROUP_CREATE, username, members.toString(), groupName);
@@ -288,7 +360,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         chatPanel.setSendListener(new ChatPanel.ChatSendListener() {
             @Override
             public void onSendMessage(String target, String text) {
-                chatClient.sendTextMessage(username, target, text);
+                Message textMsg = Message.textMessage(username, target, text);
+                chatClient.sendMessage(textMsg);
+                historyManager.saveMessage(target, textMsg);
             }
 
             @Override
@@ -298,8 +372,24 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 fileMsg.setFileSize(data.length);
                 fileMsg.setFileData(data);
                 chatClient.sendMessage(fileMsg);
+                historyManager.saveMessage(target, fileMsg);
+            }
+
+            @Override
+            public void onClearHistory(String target) {
+                historyManager.clearHistory(target);
             }
         });
+
+        // Load History
+        java.util.List<Message> history = historyManager.loadHistory(targetUser);
+        for (Message m : history) {
+            if (m.getType() == MessageType.TEXT) {
+                chatPanel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+            } else if (m.getType() == MessageType.FILE_RECEIVE || m.getType() == MessageType.FILE_SEND) {
+                chatPanel.appendFileMessage(m.getSender(), m.getFileName(), m.getFileSize(), m.getFileData(), m.getSender().equals(username));
+            }
+        }
 
         // Add tab with close button
         openChats.put(targetUser, chatPanel);
@@ -323,13 +413,28 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             public void onSendMessage(String target, String text) {
                 Message msg = new Message(MessageType.GROUP_TEXT, username, groupId, text);
                 chatClient.sendMessage(msg);
+                historyManager.saveMessage(groupId, msg);
             }
             @Override
             public void onSendFile(String target, String fileName, byte[] data) {
                 // File to group not fully implemented yet
                 JOptionPane.showMessageDialog(MainFrame.this, "File sending to groups coming soon!");
             }
+
+            @Override
+            public void onClearHistory(String target) {
+                // target in group chat is groupName + " (Group)", so we use groupId
+                historyManager.clearHistory(groupId);
+            }
         });
+
+        // Load History
+        java.util.List<Message> history = historyManager.loadHistory(groupId);
+        for (Message m : history) {
+            if (m.getType() == MessageType.GROUP_TEXT) {
+                chatPanel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+            }
+        }
 
         openChats.put(groupId, chatPanel);
         chatTabs.addTab(groupName, chatPanel);
@@ -415,7 +520,10 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 case GROUP_CREATE_SUCCESS:
                     String groupId = message.getReceiver();
                     String groupName = message.getContent();
-                    groupNames.put(groupId, groupName);
+                    if (!groupNames.containsKey(groupId)) {
+                        groupNames.put(groupId, groupName);
+                        groupListModel.addElement(new GroupItem(groupId, groupName));
+                    }
                     openGroupChatTab(groupId, groupName);
                     break;
                 case GROUP_TEXT:
@@ -469,14 +577,15 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
 
     private void handleIncomingText(Message message) {
         String sender = message.getSender();
-        // Auto-open tab if not open
         if (!openChats.containsKey(sender)) {
             openChatTab(sender);
         }
+        
+        historyManager.saveMessage(sender, message);
+        
         ChatPanel panel = openChats.get(sender);
         if (panel != null) {
             panel.appendMessage(sender, message.getContent(), false);
-            // Flash tab if not currently selected
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
@@ -490,6 +599,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             String groupName = groupNames.getOrDefault(groupId, "Group Chat");
             openGroupChatTab(groupId, groupName);
         }
+        
+        historyManager.saveMessage(groupId, message);
+        
         ChatPanel panel = openChats.get(groupId);
         if (panel != null) {
             panel.appendMessage(message.getSender(), message.getContent(), false);
@@ -505,6 +617,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         if (!openChats.containsKey(sender)) {
             openChatTab(sender);
         }
+        
+        historyManager.saveMessage(sender, message);
+        
         ChatPanel panel = openChats.get(sender);
         if (panel != null) {
             panel.appendFileMessage(sender, message.getFileName(),
