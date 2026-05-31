@@ -170,8 +170,14 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     }
 
     private JTabbedPane createChatTabs() {
+        UIManager.put("TabbedPane.background", BG_SIDEBAR);
+        UIManager.put("TabbedPane.foreground", FG_TEXT);
+        UIManager.put("TabbedPane.selected", BG_CONTENT);
+        UIManager.put("TabbedPane.contentAreaColor", BG_CONTENT);
+        UIManager.put("TabbedPane.focus", new Color(0, 0, 0, 0));
+
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setBackground(BG_CONTENT);
+        tabs.setBackground(BG_SIDEBAR);
         tabs.setForeground(FG_TEXT);
         tabs.setFont(new Font("Segoe UI", Font.PLAIN, 13));
 
@@ -255,6 +261,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
 
         JLabel label = new JLabel(title);
         label.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        label.setForeground(FG_TEXT); // Fix contrast
         header.add(label);
 
         JButton closeBtn = new JButton("×");

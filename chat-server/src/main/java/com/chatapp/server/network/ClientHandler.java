@@ -107,8 +107,16 @@ public class ClientHandler implements Runnable {
             Message onlineNotify = Message.systemMessage(MessageType.USER_ONLINE, username);
             ServerManager.getInstance().broadcastToAllExcept(username, onlineNotify);
 
-            // Send online user list to the new user
-            sendOnlineUserList();
+            // Send online user list to the new user after a short delay
+            // This ensures the client UI has fully transitioned to MainFrame and registered its listener
+            new Thread(() -> {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                sendOnlineUserList();
+            }).start();
 
             // Notify server GUI
             if (server.getListener() != null) {
