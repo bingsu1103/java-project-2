@@ -242,6 +242,17 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         g.gridy = r++; g.insets = new Insets(0, 0, 6, 0);
         panel.add(loginButton, g);
 
+        // Enter key action
+        java.awt.event.ActionListener enterAction = e -> {
+            if (isLoginMode) {
+                loginButton.doClick();
+            } else {
+                registerButton.doClick();
+            }
+        };
+        usernameField.addActionListener(enterAction);
+        passwordField.addActionListener(enterAction);
+
         // Register button (hidden)
         registerButton = createStyledButton("Register", ACCENT_BLUE);
         registerButton.addActionListener(this::onRegisterClicked);

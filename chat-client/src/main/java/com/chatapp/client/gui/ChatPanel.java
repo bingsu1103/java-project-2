@@ -110,9 +110,19 @@ public class ChatPanel extends JPanel {
         inputArea.setBackground(BG_INPUT);
         inputArea.setForeground(FG_TEXT);
         inputArea.setCaretColor(FG_TEXT);
+        inputArea.setCaretColor(FG_TEXT);
+        inputArea.setSelectionColor(new Color(50, 160, 255, 120)); // Beautiful translucent blue
+        inputArea.setSelectedTextColor(Color.WHITE);
         inputArea.setLineWrap(true);
         inputArea.setWrapStyleWord(true);
         inputArea.setBorder(new EmptyBorder(8, 12, 8, 12));
+
+        // Support macOS Cmd shortcut mappings (Cmd+C, Cmd+V, Cmd+X, Cmd+A)
+        InputMap im = inputArea.getInputMap(JComponent.WHEN_FOCUSED);
+        im.put(KeyStroke.getKeyStroke("meta C"), javax.swing.text.DefaultEditorKit.copyAction);
+        im.put(KeyStroke.getKeyStroke("meta V"), javax.swing.text.DefaultEditorKit.pasteAction);
+        im.put(KeyStroke.getKeyStroke("meta X"), javax.swing.text.DefaultEditorKit.cutAction);
+        im.put(KeyStroke.getKeyStroke("meta A"), javax.swing.text.DefaultEditorKit.selectAllAction);
         inputArea.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -249,10 +259,16 @@ public class ChatPanel extends JPanel {
             StyleConstants.setForeground(timeStyle, FG_TIME);
             StyleConstants.setFontSize(timeStyle, 10);
 
+            // Alignment
+            SimpleAttributeSet alignment = new SimpleAttributeSet();
+            StyleConstants.setAlignment(alignment, isSelf ? StyleConstants.ALIGN_RIGHT : StyleConstants.ALIGN_LEFT);
+
             // Add spacing between messages
             if (doc.getLength() > 0) {
                 doc.insertString(doc.getLength(), "\n", textStyle);
             }
+
+            int startPos = doc.getLength();
 
             // Insert: [sender] [time]
             String senderLabel = isSelf ? "You" : sender;
@@ -261,6 +277,10 @@ public class ChatPanel extends JPanel {
 
             // Insert: message text
             doc.insertString(doc.getLength(), text + "\n", textStyle);
+
+            // Apply paragraph alignment
+            int endPos = doc.getLength();
+            doc.setParagraphAttributes(startPos, endPos - startPos, alignment, false);
 
         } catch (BadLocationException e) {
             e.printStackTrace();

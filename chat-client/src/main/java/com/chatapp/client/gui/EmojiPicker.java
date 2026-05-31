@@ -19,7 +19,7 @@ public class EmojiPicker extends JPopupMenu {
     private static final String[] EMOJIS = {
             "😀", "😂", "😍", "🤣", "😎",
             "😢", "😡", "🤔", "👍", "👎",
-            "❤️", "🔥", "🎉", "👋", "🙏",
+            "🩷", "🔥", "🎉", "👋", "🙏",
             "💯", "✅", "⭐", "😱", "🥳"
     };
 

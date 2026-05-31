@@ -264,12 +264,13 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         label.setForeground(FG_TEXT); // Fix contrast
         header.add(label);
 
-        JButton closeBtn = new JButton("×");
+        JButton closeBtn = new JButton("x");
         closeBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
         closeBtn.setForeground(FG_HINT);
         closeBtn.setBorderPainted(false);
         closeBtn.setContentAreaFilled(false);
         closeBtn.setFocusPainted(false);
+        closeBtn.setMargin(new Insets(0, 0, 0, 0));
         closeBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
         closeBtn.setPreferredSize(new Dimension(20, 20));
         closeBtn.addActionListener(e -> closeChatTab(title));
