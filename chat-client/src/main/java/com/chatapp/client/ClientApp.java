@@ -17,6 +17,10 @@ public class ClientApp {
             // Fallback to default LAF
         }
 
+        showLoginFrame();
+    }
+
+    public static void showLoginFrame() {
         SwingUtilities.invokeLater(() -> {
             LoginFrame loginFrame = new LoginFrame();
             loginFrame.setLoginCallback((client, username) -> {

@@ -118,7 +118,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         logoutBtn.setBorderPainted(false);
         logoutBtn.setFocusPainted(false);
         logoutBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        logoutBtn.addActionListener(e -> onExit());
+        logoutBtn.addActionListener(e -> onLogout());
         header.add(logoutBtn, BorderLayout.EAST);
 
         sidebar.add(header, BorderLayout.NORTH);
@@ -378,14 +378,20 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         }
     }
 
-    private void onExit() {
+    private void onLogout() {
         int choice = JOptionPane.showConfirmDialog(this,
-                "Logout and exit?", "Confirm", JOptionPane.YES_NO_OPTION);
+                "Are you sure you want to logout?", "Confirm Logout", JOptionPane.YES_NO_OPTION);
         if (choice == JOptionPane.YES_OPTION) {
             chatClient.logout();
             dispose();
-            System.exit(0);
+            com.chatapp.client.ClientApp.showLoginFrame();
         }
+    }
+
+    private void onExit() {
+        chatClient.logout();
+        dispose();
+        System.exit(0);
     }
 
     // --- ChatClient.MessageListener ---
