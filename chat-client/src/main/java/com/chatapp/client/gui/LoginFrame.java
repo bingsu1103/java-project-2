@@ -1,5 +1,7 @@
 package com.chatapp.client.gui;
 
+import com.chatapp.client.config.ServerConfigManager;
+import com.chatapp.client.config.ServerConfigManager.ServerEntry;
 import com.chatapp.client.network.ChatClient;
 import com.chatapp.common.model.Message;
 import com.chatapp.common.protocol.MessageType;
@@ -9,6 +11,7 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.io.IOException;
+import java.util.List;
 
 /**
  * Login and Registration window for the chat client.
@@ -27,6 +30,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     private static final Color ACCENT_RED = new Color(218, 54, 51);
 
     // --- UI Components ---
+    private JComboBox<String> serverCombo;
     private JTextField hostField;
     private JTextField portField;
     private JButton connectButton;
@@ -46,6 +50,9 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     private ChatClient chatClient;
     private String currentUsername;
 
+    // --- Config ---
+    private ServerConfigManager configManager;
+
     // --- Callback ---
     private LoginCallback callback;
 
@@ -53,6 +60,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         super("Chat Application - Login");
         chatClient = new ChatClient();
         chatClient.addListener(this);
+        configManager = new ServerConfigManager();
         initUI();
     }
 
@@ -118,6 +126,39 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         panel.add(sectionLabel);
         panel.add(Box.createVerticalStrut(10));
 
+        // Server list combo + manage buttons
+        JPanel serverRow = new JPanel(new BorderLayout(6, 0));
+        serverRow.setBackground(BG_DARK);
+        serverRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        serverRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        serverCombo = new JComboBox<>();
+        serverCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        serverCombo.setBackground(BG_INPUT);
+        serverCombo.setForeground(FG_TEXT);
+        refreshServerCombo();
+        serverCombo.addActionListener(e -> onServerSelected());
+        serverRow.add(serverCombo, BorderLayout.CENTER);
+
+        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 0));
+        btnRow.setBackground(BG_DARK);
+        JButton addBtn = createSmallButton("+");
+        addBtn.setToolTipText("Add server");
+        addBtn.addActionListener(e -> onAddServer());
+        JButton editBtn = createSmallButton("✎");
+        editBtn.setToolTipText("Edit server");
+        editBtn.addActionListener(e -> onEditServer());
+        JButton delBtn = createSmallButton("✕");
+        delBtn.setToolTipText("Delete server");
+        delBtn.addActionListener(e -> onDeleteServer());
+        btnRow.add(addBtn);
+        btnRow.add(editBtn);
+        btnRow.add(delBtn);
+        serverRow.add(btnRow, BorderLayout.EAST);
+
+        panel.add(serverRow);
+        panel.add(Box.createVerticalStrut(8));
+
         // Host + Port row
         JPanel row = new JPanel(new BorderLayout(8, 0));
         row.setBackground(BG_DARK);
@@ -151,6 +192,11 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         connectRow.add(connectionStatus, BorderLayout.CENTER);
 
         panel.add(connectRow);
+
+        // Auto-select first server
+        if (serverCombo.getItemCount() > 0) {
+            serverCombo.setSelectedIndex(0);
+        }
 
         return panel;
     }
@@ -401,6 +447,79 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         });
     }
 
+    // --- Server management ---
+
+    private void refreshServerCombo() {
+        serverCombo.removeAllItems();
+        for (ServerEntry entry : configManager.getServers()) {
+            serverCombo.addItem(entry.toString());
+        }
+    }
+
+    private void onServerSelected() {
+        int idx = serverCombo.getSelectedIndex();
+        if (idx >= 0) {
+            ServerEntry entry = configManager.getServer(idx);
+            if (entry != null) {
+                hostField.setText(entry.getHost());
+                portField.setText(String.valueOf(entry.getPort()));
+            }
+        }
+    }
+
+    private void onAddServer() {
+        String name = JOptionPane.showInputDialog(this, "Server name:", "Add Server", JOptionPane.PLAIN_MESSAGE);
+        if (name == null || name.trim().isEmpty()) return;
+        String host = JOptionPane.showInputDialog(this, "Host:", "localhost");
+        if (host == null || host.trim().isEmpty()) return;
+        String portStr = JOptionPane.showInputDialog(this, "Port:", "12345");
+        if (portStr == null) return;
+        try {
+            int port = Integer.parseInt(portStr.trim());
+            configManager.addServer(name.trim(), host.trim(), port);
+            refreshServerCombo();
+            serverCombo.setSelectedIndex(serverCombo.getItemCount() - 1);
+        } catch (NumberFormatException ex) {
+            showMessage("Invalid port number.", ACCENT_RED);
+        }
+    }
+
+    private void onEditServer() {
+        int idx = serverCombo.getSelectedIndex();
+        if (idx < 0) return;
+        ServerEntry entry = configManager.getServer(idx);
+        if (entry == null) return;
+
+        String name = JOptionPane.showInputDialog(this, "Server name:", entry.getName());
+        if (name == null || name.trim().isEmpty()) return;
+        String host = JOptionPane.showInputDialog(this, "Host:", entry.getHost());
+        if (host == null || host.trim().isEmpty()) return;
+        String portStr = JOptionPane.showInputDialog(this, "Port:", String.valueOf(entry.getPort()));
+        if (portStr == null) return;
+        try {
+            int port = Integer.parseInt(portStr.trim());
+            configManager.updateServer(idx, name.trim(), host.trim(), port);
+            refreshServerCombo();
+            serverCombo.setSelectedIndex(idx);
+        } catch (NumberFormatException ex) {
+            showMessage("Invalid port number.", ACCENT_RED);
+        }
+    }
+
+    private void onDeleteServer() {
+        int idx = serverCombo.getSelectedIndex();
+        if (idx < 0) return;
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Delete this server?", "Confirm", JOptionPane.YES_NO_OPTION);
+        if (choice == JOptionPane.YES_OPTION) {
+            configManager.removeServer(idx);
+            refreshServerCombo();
+            if (serverCombo.getItemCount() > 0) {
+                serverCombo.setSelectedIndex(0);
+            }
+        }
+    }
+
     // --- Helper methods ---
 
     private JTextField createStyledTextField(String text) {
@@ -425,6 +544,18 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         button.setBorder(new EmptyBorder(8, 20, 8, 20));
         button.setOpaque(true);
         return button;
+    }
+
+    private JButton createSmallButton(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setBackground(new Color(70, 70, 75));
+        btn.setForeground(FG_TEXT);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btn.setPreferredSize(new Dimension(28, 28));
+        return btn;
     }
 
     private void addPlaceholder(JTextField field, String placeholder) {
