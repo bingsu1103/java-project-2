@@ -237,57 +237,83 @@ public class ChatPanel extends JPanel {
      * Append a message to the chat display.
      */
     public void appendMessage(String sender, String text, boolean isSelf) {
-        StyledDocument doc = messageArea.getStyledDocument();
+        String time = LocalDateTime.now().format(TIME_FMT);
 
-        try {
-            // Timestamp
-            String time = LocalDateTime.now().format(TIME_FMT);
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
 
-            // Sender label style
-            SimpleAttributeSet senderStyle = new SimpleAttributeSet();
-            StyleConstants.setForeground(senderStyle, isSelf ? new Color(100, 180, 255) : new Color(255, 180, 100));
-            StyleConstants.setBold(senderStyle, true);
-            StyleConstants.setFontSize(senderStyle, 12);
-
-            // Message text style
-            SimpleAttributeSet textStyle = new SimpleAttributeSet();
-            StyleConstants.setForeground(textStyle, FG_TEXT);
-            StyleConstants.setFontSize(textStyle, 14);
-
-            // Time style
-            SimpleAttributeSet timeStyle = new SimpleAttributeSet();
-            StyleConstants.setForeground(timeStyle, FG_TIME);
-            StyleConstants.setFontSize(timeStyle, 10);
-
-            // Alignment
-            SimpleAttributeSet alignment = new SimpleAttributeSet();
-            StyleConstants.setAlignment(alignment, isSelf ? StyleConstants.ALIGN_RIGHT : StyleConstants.ALIGN_LEFT);
-
-            // Add spacing between messages
-            if (doc.getLength() > 0) {
-                doc.insertString(doc.getLength(), "\n", textStyle);
+        // Bubble panel with rounded corners
+        JPanel bubble = new JPanel(new BorderLayout(0, 4)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                g2.dispose();
             }
+        };
+        bubble.setOpaque(false);
+        bubble.setBackground(isSelf ? BG_MSG_SELF : BG_MSG_OTHER);
+        bubble.setBorder(new EmptyBorder(8, 12, 8, 12));
 
-            int startPos = doc.getLength();
+        // Header (Sender + Time)
+        JPanel headerPanel = new JPanel(new BorderLayout(10, 0));
+        headerPanel.setOpaque(false);
+        JLabel senderLabel = new JLabel(isSelf ? "You" : sender);
+        senderLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        senderLabel.setForeground(isSelf ? new Color(200, 230, 255) : new Color(255, 180, 100));
+        
+        JLabel timeLabel = new JLabel(time);
+        timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        timeLabel.setForeground(isSelf ? new Color(180, 210, 255) : FG_HINT);
+        
+        headerPanel.add(senderLabel, BorderLayout.WEST);
+        headerPanel.add(timeLabel, BorderLayout.EAST);
+        bubble.add(headerPanel, BorderLayout.NORTH);
 
-            // Insert: [sender] [time]
-            String senderLabel = isSelf ? "You" : sender;
-            doc.insertString(doc.getLength(), senderLabel, senderStyle);
-            doc.insertString(doc.getLength(), "  " + time + "\n", timeStyle);
+        // Message text
+        JTextArea textArea = new JTextArea(text);
+        textArea.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        textArea.setForeground(FG_TEXT);
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setEditable(false);
+        textArea.setOpaque(false);
+        textArea.setSelectionColor(new Color(255, 255, 255, 80));
+        textArea.setSelectedTextColor(Color.WHITE);
+        textArea.setBorder(null);
 
-            // Insert: message text
-            doc.insertString(doc.getLength(), text + "\n", textStyle);
-
-            // Apply paragraph alignment
-            int endPos = doc.getLength();
-            doc.setParagraphAttributes(startPos, endPos - startPos, alignment, false);
-
-        } catch (BadLocationException e) {
-            e.printStackTrace();
+        // Constrain text width for multi-line bubbles
+        int maxWidth = 350;
+        textArea.setSize(new Dimension(maxWidth, Short.MAX_VALUE));
+        Dimension pref = textArea.getPreferredSize();
+        if (pref.width > maxWidth) {
+            textArea.setPreferredSize(new Dimension(maxWidth, textArea.getPreferredSize().height));
         }
 
-        // Auto-scroll to bottom
-        messageArea.setCaretPosition(doc.getLength());
+        bubble.add(textArea, BorderLayout.CENTER);
+
+        JPanel alignPanel = new JPanel(new FlowLayout(isSelf ? FlowLayout.RIGHT : FlowLayout.LEFT, 5, 2));
+        alignPanel.setOpaque(false);
+        alignPanel.add(bubble);
+
+        wrapper.add(alignPanel, BorderLayout.CENTER);
+
+        // Add macOS command shortcuts for textArea
+        InputMap im = textArea.getInputMap(JComponent.WHEN_FOCUSED);
+        im.put(KeyStroke.getKeyStroke("meta C"), javax.swing.text.DefaultEditorKit.copyAction);
+        im.put(KeyStroke.getKeyStroke("meta A"), javax.swing.text.DefaultEditorKit.selectAllAction);
+
+        try {
+            StyledDocument doc = messageArea.getStyledDocument();
+            messageArea.setCaretPosition(doc.getLength());
+            messageArea.insertComponent(wrapper);
+            doc.insertString(doc.getLength(), "\n", null);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        messageArea.setCaretPosition(messageArea.getDocument().getLength());
     }
 
     /**
