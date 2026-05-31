@@ -125,6 +125,28 @@ public class ChatPanel extends JPanel {
             }
         });
 
+        // Left side: emoji button
+        JButton emojiButton = new JButton("😀");
+        emojiButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 20));
+        emojiButton.setBackground(new Color(50, 50, 55));
+        emojiButton.setForeground(FG_TEXT);
+        emojiButton.setBorderPainted(false);
+        emojiButton.setFocusPainted(false);
+        emojiButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        emojiButton.setPreferredSize(new Dimension(42, 55));
+        emojiButton.setToolTipText("Insert emoji");
+
+        EmojiPicker emojiPicker = new EmojiPicker();
+        emojiPicker.setEmojiSelectListener(emoji -> {
+            inputArea.insert(emoji, inputArea.getCaretPosition());
+            inputArea.requestFocusInWindow();
+        });
+
+        emojiButton.addActionListener(e -> {
+            emojiPicker.show(emojiButton, 0, -emojiPicker.getPreferredSize().height);
+        });
+        panel.add(emojiButton, BorderLayout.WEST);
+
         JScrollPane inputScroll = new JScrollPane(inputArea);
         inputScroll.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 75)));
         inputScroll.setPreferredSize(new Dimension(0, 55));
