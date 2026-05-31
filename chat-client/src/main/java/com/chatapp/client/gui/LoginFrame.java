@@ -20,14 +20,14 @@ import java.util.List;
 public class LoginFrame extends JFrame implements ChatClient.MessageListener {
 
     // --- Colors ---
-    private static final Color BG_DARK = new Color(30, 30, 35);
-    private static final Color BG_PANEL = new Color(45, 45, 50);
-    private static final Color BG_INPUT = new Color(60, 60, 65);
-    private static final Color FG_TEXT = new Color(220, 220, 220);
-    private static final Color FG_HINT = new Color(140, 140, 140);
-    private static final Color ACCENT_BLUE = new Color(0, 122, 204);
-    private static final Color ACCENT_GREEN = new Color(46, 160, 67);
-    private static final Color ACCENT_RED = new Color(218, 54, 51);
+    private static final Color BG_DARK = new Color(24, 24, 28);
+    private static final Color BG_PANEL = new Color(34, 34, 40);
+    private static final Color BG_INPUT = new Color(45, 45, 52);
+    private static final Color FG_TEXT = new Color(240, 240, 240);
+    private static final Color FG_HINT = new Color(150, 150, 160);
+    private static final Color ACCENT_BLUE = new Color(50, 160, 255);
+    private static final Color ACCENT_GREEN = new Color(50, 180, 80);
+    private static final Color ACCENT_RED = new Color(230, 70, 70);
 
     // --- UI Components ---
     private JComboBox<String> serverCombo;
@@ -42,6 +42,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     private JButton registerButton;
     private JButton switchModeButton;
     private JLabel messageLabel;
+    private JLabel authLabel;
 
     private boolean isLoginMode = true;
     private boolean isConnected = false;
@@ -74,77 +75,84 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
         getContentPane().setBackground(BG_DARK);
-        setLayout(new BorderLayout());
+        setLayout(new GridBagLayout()); // Centered panel in the frame
 
-        // --- Main panel ---
-        JPanel mainPanel = new JPanel();
-        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
-        mainPanel.setBackground(BG_DARK);
-        mainPanel.setBorder(new EmptyBorder(25, 35, 25, 35));
+        // --- Centered container panel ---
+        JPanel containerPanel = new JPanel();
+        containerPanel.setLayout(new BoxLayout(containerPanel, BoxLayout.Y_AXIS));
+        containerPanel.setBackground(BG_DARK);
+        containerPanel.setPreferredSize(new Dimension(360, 560));
+        containerPanel.setMaximumSize(new Dimension(360, 560));
+        containerPanel.setMinimumSize(new Dimension(360, 560));
 
         // Title
-        JLabel titleLabel = new JLabel("💬 Chat App");
+        JLabel titleLabel = new JLabel("💬 Chat App", SwingConstants.CENTER);
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 28));
         titleLabel.setForeground(ACCENT_BLUE);
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mainPanel.add(titleLabel);
-        mainPanel.add(Box.createVerticalStrut(5));
+        containerPanel.add(titleLabel);
+        containerPanel.add(Box.createVerticalStrut(4));
 
-        JLabel subtitleLabel = new JLabel("Connect & Sign In");
+        // Subtitle
+        JLabel subtitleLabel = new JLabel("Connect & Sign In", SwingConstants.CENTER);
         subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         subtitleLabel.setForeground(FG_HINT);
         subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mainPanel.add(subtitleLabel);
-        mainPanel.add(Box.createVerticalStrut(25));
+        containerPanel.add(subtitleLabel);
+        containerPanel.add(Box.createVerticalStrut(25));
 
-        // --- Connection Section ---
-        mainPanel.add(createConnectionPanel());
-        mainPanel.add(Box.createVerticalStrut(15));
+        // Connection Panel
+        JPanel connPanel = createConnectionPanel();
+        connPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        containerPanel.add(connPanel);
+        containerPanel.add(Box.createVerticalStrut(15));
 
-        // --- Separator ---
+        // Separator
         JSeparator separator = new JSeparator();
-        separator.setForeground(new Color(70, 70, 75));
-        separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
-        mainPanel.add(separator);
-        mainPanel.add(Box.createVerticalStrut(15));
+        separator.setForeground(new Color(60, 60, 65));
+        separator.setMaximumSize(new Dimension(360, 1));
+        separator.setAlignmentX(Component.CENTER_ALIGNMENT);
+        containerPanel.add(separator);
+        containerPanel.add(Box.createVerticalStrut(15));
 
-        // --- Auth Section ---
-        mainPanel.add(createAuthPanel());
+        // Auth Panel
+        JPanel authPanel = createAuthPanel();
+        authPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        containerPanel.add(authPanel);
 
-        // Wrap in scroll pane for safety
-        JScrollPane scrollPane = new JScrollPane(mainPanel);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getViewport().setBackground(BG_DARK);
-        add(scrollPane, BorderLayout.CENTER);
+        add(containerPanel);
     }
 
     private JPanel createConnectionPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setBackground(BG_DARK);
+        panel.setPreferredSize(new Dimension(360, 185));
+        panel.setMaximumSize(new Dimension(360, 185));
+        panel.setMinimumSize(new Dimension(360, 185));
+
+        GridBagConstraints g = new GridBagConstraints();
+        g.gridx = 0; g.weightx = 1.0;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.anchor = GridBagConstraints.WEST;
+        int r = 0;
 
         JLabel sectionLabel = new JLabel("Server Connection");
         sectionLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
         sectionLabel.setForeground(FG_TEXT);
-        sectionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(sectionLabel);
-        panel.add(Box.createVerticalStrut(10));
+        g.gridy = r++; g.insets = new Insets(0, 0, 8, 0);
+        panel.add(sectionLabel, g);
 
-        // Server list combo + manage buttons
-        JPanel serverRow = new JPanel(new BorderLayout(4, 0));
-        serverRow.setBackground(BG_DARK);
-        serverRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
-        serverRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-
+        // Server combo
         serverCombo = new JComboBox<>();
         serverCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         serverCombo.setBackground(BG_INPUT);
         serverCombo.setForeground(FG_TEXT);
         refreshServerCombo();
         serverCombo.addActionListener(e -> onServerSelected());
-        serverRow.add(serverCombo, BorderLayout.CENTER);
+        g.gridy = r++; g.insets = new Insets(0, 0, 6, 0);
+        panel.add(serverCombo, g);
 
+        // Manage buttons row using BoxLayout to prevent FlowLayout margins
         JPanel btnRow = new JPanel();
         btnRow.setLayout(new BoxLayout(btnRow, BoxLayout.X_AXIS));
         btnRow.setBackground(BG_DARK);
@@ -155,48 +163,36 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         JButton delBtn = createSmallButton("Delete");
         delBtn.addActionListener(e -> onDeleteServer());
         btnRow.add(addBtn);
-        btnRow.add(Box.createHorizontalStrut(3));
+        btnRow.add(Box.createHorizontalStrut(6));
         btnRow.add(editBtn);
-        btnRow.add(Box.createHorizontalStrut(3));
+        btnRow.add(Box.createHorizontalStrut(6));
         btnRow.add(delBtn);
-        serverRow.add(btnRow, BorderLayout.EAST);
+        g.gridy = r++; g.insets = new Insets(0, 0, 10, 0);
+        panel.add(btnRow, g);
 
-        panel.add(serverRow);
-        panel.add(Box.createVerticalStrut(8));
-
-        // Host + Port row
-        JPanel row = new JPanel(new BorderLayout(8, 0));
-        row.setBackground(BG_DARK);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        row.setAlignmentX(Component.LEFT_ALIGNMENT);
-
+        // Host + Port
+        JPanel hostPortRow = new JPanel(new BorderLayout(8, 0));
+        hostPortRow.setBackground(BG_DARK);
         hostField = createStyledTextField("localhost");
-        hostField.setPreferredSize(new Dimension(200, 38));
-        row.add(hostField, BorderLayout.CENTER);
-
+        hostPortRow.add(hostField, BorderLayout.CENTER);
         portField = createStyledTextField("12345");
-        portField.setPreferredSize(new Dimension(80, 38));
-        row.add(portField, BorderLayout.EAST);
+        portField.setPreferredSize(new Dimension(80, 34));
+        hostPortRow.add(portField, BorderLayout.EAST);
+        g.gridy = r++; g.insets = new Insets(0, 0, 10, 0);
+        panel.add(hostPortRow, g);
 
-        panel.add(row);
-        panel.add(Box.createVerticalStrut(10));
-
-        // Connect button + status
+        // Connect + status
         JPanel connectRow = new JPanel(new BorderLayout(10, 0));
         connectRow.setBackground(BG_DARK);
-        connectRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
-        connectRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         connectButton = createStyledButton("Connect", ACCENT_BLUE);
         connectButton.addActionListener(this::onConnectClicked);
         connectRow.add(connectButton, BorderLayout.WEST);
-
         connectionStatus = new JLabel("● Disconnected");
         connectionStatus.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         connectionStatus.setForeground(ACCENT_RED);
         connectRow.add(connectionStatus, BorderLayout.CENTER);
-
-        panel.add(connectRow);
+        g.gridy = r++; g.insets = new Insets(0, 0, 0, 0);
+        panel.add(connectRow, g);
 
         // Auto-select first server
         if (serverCombo.getItemCount() > 0) {
@@ -207,27 +203,32 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     }
 
     private JPanel createAuthPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setBackground(BG_DARK);
+        panel.setPreferredSize(new Dimension(360, 230));
+        panel.setMaximumSize(new Dimension(360, 230));
+        panel.setMinimumSize(new Dimension(360, 230));
 
-        JLabel authLabel = new JLabel("Login");
+        GridBagConstraints g = new GridBagConstraints();
+        g.gridx = 0; g.weightx = 1.0;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.anchor = GridBagConstraints.WEST;
+        int r = 0;
+
+        authLabel = new JLabel("Login");
         authLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
         authLabel.setForeground(FG_TEXT);
-        authLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(authLabel);
-        panel.add(Box.createVerticalStrut(10));
+        g.gridy = r++; g.insets = new Insets(0, 0, 8, 0);
+        panel.add(authLabel, g);
 
         // Username
         usernameField = createStyledTextField("");
-        usernameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        usernameField.setAlignmentX(Component.LEFT_ALIGNMENT);
         usernameField.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 75)),
                 new EmptyBorder(8, 12, 8, 12)));
         addPlaceholder(usernameField, "Username");
-        panel.add(usernameField);
-        panel.add(Box.createVerticalStrut(10));
+        g.gridy = r++; g.insets = new Insets(0, 0, 8, 0);
+        panel.add(usernameField, g);
 
         // Password
         passwordField = new JPasswordField();
@@ -235,39 +236,32 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         passwordField.setBackground(BG_INPUT);
         passwordField.setForeground(FG_TEXT);
         passwordField.setCaretColor(FG_TEXT);
-        passwordField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        passwordField.setAlignmentX(Component.LEFT_ALIGNMENT);
         passwordField.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 70, 75)),
                 new EmptyBorder(8, 12, 8, 12)));
-        panel.add(passwordField);
-        panel.add(Box.createVerticalStrut(15));
+        g.gridy = r++; g.insets = new Insets(0, 0, 12, 0);
+        panel.add(passwordField, g);
 
         // Login button
         loginButton = createStyledButton("Login", ACCENT_GREEN);
-        loginButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        loginButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         loginButton.addActionListener(this::onLoginClicked);
         loginButton.setEnabled(false);
-        panel.add(loginButton);
-        panel.add(Box.createVerticalStrut(8));
+        g.gridy = r++; g.insets = new Insets(0, 0, 6, 0);
+        panel.add(loginButton, g);
 
-        // Register button (hidden in login mode)
+        // Register button (hidden)
         registerButton = createStyledButton("Register", ACCENT_BLUE);
-        registerButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-        registerButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         registerButton.addActionListener(this::onRegisterClicked);
         registerButton.setVisible(false);
-        panel.add(registerButton);
-        panel.add(Box.createVerticalStrut(12));
+        g.gridy = r++; g.insets = new Insets(0, 0, 10, 0);
+        panel.add(registerButton, g);
 
-        // Message label (for success/error)
+        // Message label
         messageLabel = new JLabel(" ");
         messageLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
         messageLabel.setForeground(FG_HINT);
-        messageLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(messageLabel);
-        panel.add(Box.createVerticalStrut(8));
+        g.gridy = r++; g.insets = new Insets(0, 0, 6, 0);
+        panel.add(messageLabel, g);
 
         // Switch mode link
         switchModeButton = new JButton("<html><u>Don't have an account? Register</u></html>");
@@ -278,9 +272,10 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         switchModeButton.setContentAreaFilled(false);
         switchModeButton.setOpaque(false);
         switchModeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        switchModeButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        switchModeButton.setHorizontalAlignment(SwingConstants.CENTER);
         switchModeButton.addActionListener(e -> toggleMode());
-        panel.add(switchModeButton);
+        g.gridy = r++; g.insets = new Insets(0, 0, 0, 0);
+        panel.add(switchModeButton, g);
 
         return panel;
     }
@@ -360,10 +355,12 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         if (isLoginMode) {
             loginButton.setVisible(true);
             registerButton.setVisible(false);
+            if (authLabel != null) authLabel.setText("Login");
             switchModeButton.setText("<html><u>Don't have an account? Register</u></html>");
         } else {
             loginButton.setVisible(false);
             registerButton.setVisible(true);
+            if (authLabel != null) authLabel.setText("Register");
             switchModeButton.setText("<html><u>Already have an account? Login</u></html>");
         }
         messageLabel.setText(" ");
