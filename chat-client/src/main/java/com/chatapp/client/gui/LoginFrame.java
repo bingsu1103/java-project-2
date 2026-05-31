@@ -69,7 +69,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
     }
 
     private void initUI() {
-        setSize(420, 520);
+        setSize(440, 640);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setResizable(false);
@@ -80,7 +80,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         JPanel mainPanel = new JPanel();
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         mainPanel.setBackground(BG_DARK);
-        mainPanel.setBorder(new EmptyBorder(30, 40, 30, 40));
+        mainPanel.setBorder(new EmptyBorder(25, 35, 25, 35));
 
         // Title
         JLabel titleLabel = new JLabel("💬 Chat App");
@@ -99,19 +99,24 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
 
         // --- Connection Section ---
         mainPanel.add(createConnectionPanel());
-        mainPanel.add(Box.createVerticalStrut(20));
+        mainPanel.add(Box.createVerticalStrut(15));
 
         // --- Separator ---
         JSeparator separator = new JSeparator();
         separator.setForeground(new Color(70, 70, 75));
         separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
         mainPanel.add(separator);
-        mainPanel.add(Box.createVerticalStrut(20));
+        mainPanel.add(Box.createVerticalStrut(15));
 
         // --- Auth Section ---
         mainPanel.add(createAuthPanel());
 
-        add(mainPanel, BorderLayout.CENTER);
+        // Wrap in scroll pane for safety
+        JScrollPane scrollPane = new JScrollPane(mainPanel);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getViewport().setBackground(BG_DARK);
+        add(scrollPane, BorderLayout.CENTER);
     }
 
     private JPanel createConnectionPanel() {
@@ -127,7 +132,7 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         panel.add(Box.createVerticalStrut(10));
 
         // Server list combo + manage buttons
-        JPanel serverRow = new JPanel(new BorderLayout(6, 0));
+        JPanel serverRow = new JPanel(new BorderLayout(4, 0));
         serverRow.setBackground(BG_DARK);
         serverRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
         serverRow.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -140,19 +145,19 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         serverCombo.addActionListener(e -> onServerSelected());
         serverRow.add(serverCombo, BorderLayout.CENTER);
 
-        JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 0));
+        JPanel btnRow = new JPanel();
+        btnRow.setLayout(new BoxLayout(btnRow, BoxLayout.X_AXIS));
         btnRow.setBackground(BG_DARK);
-        JButton addBtn = createSmallButton("+");
-        addBtn.setToolTipText("Add server");
+        JButton addBtn = createSmallButton("Add");
         addBtn.addActionListener(e -> onAddServer());
-        JButton editBtn = createSmallButton("✎");
-        editBtn.setToolTipText("Edit server");
+        JButton editBtn = createSmallButton("Edit");
         editBtn.addActionListener(e -> onEditServer());
-        JButton delBtn = createSmallButton("✕");
-        delBtn.setToolTipText("Delete server");
+        JButton delBtn = createSmallButton("Delete");
         delBtn.addActionListener(e -> onDeleteServer());
         btnRow.add(addBtn);
+        btnRow.add(Box.createHorizontalStrut(3));
         btnRow.add(editBtn);
+        btnRow.add(Box.createHorizontalStrut(3));
         btnRow.add(delBtn);
         serverRow.add(btnRow, BorderLayout.EAST);
 
@@ -265,12 +270,13 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         panel.add(Box.createVerticalStrut(8));
 
         // Switch mode link
-        switchModeButton = new JButton("Don't have an account? Register");
-        switchModeButton.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        switchModeButton.setForeground(ACCENT_BLUE);
+        switchModeButton = new JButton("<html><u>Don't have an account? Register</u></html>");
+        switchModeButton.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        switchModeButton.setForeground(new Color(80, 200, 255));
         switchModeButton.setBackground(BG_DARK);
         switchModeButton.setBorderPainted(false);
         switchModeButton.setContentAreaFilled(false);
+        switchModeButton.setOpaque(false);
         switchModeButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
         switchModeButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         switchModeButton.addActionListener(e -> toggleMode());
@@ -354,11 +360,11 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
         if (isLoginMode) {
             loginButton.setVisible(true);
             registerButton.setVisible(false);
-            switchModeButton.setText("Don't have an account? Register");
+            switchModeButton.setText("<html><u>Don't have an account? Register</u></html>");
         } else {
             loginButton.setVisible(false);
             registerButton.setVisible(true);
-            switchModeButton.setText("Already have an account? Login");
+            switchModeButton.setText("<html><u>Already have an account? Login</u></html>");
         }
         messageLabel.setText(" ");
     }
@@ -548,13 +554,13 @@ public class LoginFrame extends JFrame implements ChatClient.MessageListener {
 
     private JButton createSmallButton(String text) {
         JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         btn.setBackground(new Color(70, 70, 75));
-        btn.setForeground(FG_TEXT);
+        btn.setForeground(new Color(200, 200, 200));
         btn.setFocusPainted(false);
-        btn.setBorderPainted(false);
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btn.setPreferredSize(new Dimension(28, 28));
+        btn.setMargin(new Insets(2, 6, 2, 6));
+        btn.setOpaque(true);
         return btn;
     }
 

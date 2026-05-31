@@ -10,9 +10,9 @@ import javax.swing.*;
  */
 public class ClientApp {
     public static void main(String[] args) {
-        // Set look and feel
+        // Use cross-platform LAF to ensure custom colors work on all OS (macOS Aqua ignores them)
         try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
         } catch (Exception e) {
             // Fallback to default LAF
         }
