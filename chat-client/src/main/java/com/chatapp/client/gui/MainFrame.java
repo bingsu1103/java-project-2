@@ -3,6 +3,7 @@ package com.chatapp.client.gui;
 import com.chatapp.client.network.ChatClient;
 import com.chatapp.common.model.Message;
 import com.chatapp.common.protocol.MessageType;
+import com.chatapp.common.protocol.Protocol;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -221,8 +222,20 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
 
         // Create new ChatPanel
         ChatPanel chatPanel = new ChatPanel(username, targetUser);
-        chatPanel.setSendListener((target, text) -> {
-            chatClient.sendTextMessage(username, target, text);
+        chatPanel.setSendListener(new ChatPanel.ChatSendListener() {
+            @Override
+            public void onSendMessage(String target, String text) {
+                chatClient.sendTextMessage(username, target, text);
+            }
+
+            @Override
+            public void onSendFile(String target, String fileName, byte[] data) {
+                Message fileMsg = new Message(MessageType.FILE_SEND, username, target, null);
+                fileMsg.setFileName(fileName);
+                fileMsg.setFileSize(data.length);
+                fileMsg.setFileData(data);
+                chatClient.sendMessage(fileMsg);
+            }
         });
 
         // Add tab with close button
@@ -299,6 +312,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 case TEXT:
                     handleIncomingText(message);
                     break;
+                case FILE_RECEIVE:
+                    handleIncomingFile(message);
+                    break;
                 default:
                     break;
             }
@@ -352,6 +368,22 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         if (panel != null) {
             panel.appendMessage(sender, message.getContent(), false);
             // Flash tab if not currently selected
+            int tabIndex = chatTabs.indexOfComponent(panel);
+            if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
+                chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
+            }
+        }
+    }
+
+    private void handleIncomingFile(Message message) {
+        String sender = message.getSender();
+        if (!openChats.containsKey(sender)) {
+            openChatTab(sender);
+        }
+        ChatPanel panel = openChats.get(sender);
+        if (panel != null) {
+            panel.appendFileMessage(sender, message.getFileName(),
+                    message.getFileSize(), message.getFileData(), false);
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);

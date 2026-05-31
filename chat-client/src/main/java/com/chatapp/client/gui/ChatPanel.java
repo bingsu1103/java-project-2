@@ -6,8 +6,12 @@ import javax.swing.text.*;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 
 /**
  * Chat panel for a single conversation (1-to-1 or group).
@@ -125,15 +129,18 @@ public class ChatPanel extends JPanel {
             }
         });
 
-        // Left side: emoji button
+        // Left side: emoji + file buttons
+        JPanel leftPanel = new JPanel();
+        leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
+        leftPanel.setBackground(new Color(50, 50, 55));
+
         JButton emojiButton = new JButton("😀");
-        emojiButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 20));
+        emojiButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
         emojiButton.setBackground(new Color(50, 50, 55));
         emojiButton.setForeground(FG_TEXT);
         emojiButton.setBorderPainted(false);
         emojiButton.setFocusPainted(false);
         emojiButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        emojiButton.setPreferredSize(new Dimension(42, 55));
         emojiButton.setToolTipText("Insert emoji");
 
         EmojiPicker emojiPicker = new EmojiPicker();
@@ -141,11 +148,23 @@ public class ChatPanel extends JPanel {
             inputArea.insert(emoji, inputArea.getCaretPosition());
             inputArea.requestFocusInWindow();
         });
-
         emojiButton.addActionListener(e -> {
             emojiPicker.show(emojiButton, 0, -emojiPicker.getPreferredSize().height);
         });
-        panel.add(emojiButton, BorderLayout.WEST);
+        leftPanel.add(emojiButton);
+
+        JButton fileButton = new JButton("📎");
+        fileButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
+        fileButton.setBackground(new Color(50, 50, 55));
+        fileButton.setForeground(FG_TEXT);
+        fileButton.setBorderPainted(false);
+        fileButton.setFocusPainted(false);
+        fileButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        fileButton.setToolTipText("Send file");
+        fileButton.addActionListener(e -> doSendFile());
+        leftPanel.add(fileButton);
+
+        panel.add(leftPanel, BorderLayout.WEST);
 
         JScrollPane inputScroll = new JScrollPane(inputArea);
         inputScroll.setBorder(BorderFactory.createLineBorder(new Color(70, 70, 75)));
@@ -273,6 +292,112 @@ public class ChatPanel extends JPanel {
         messageArea.setCaretPosition(doc.getLength());
     }
 
+    // --- File transfer ---
+
+    private void doSendFile() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Select file to send");
+        int result = chooser.showOpenDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) return;
+
+        File file = chooser.getSelectedFile();
+        if (file.length() > 10 * 1024 * 1024) { // 10MB limit
+            JOptionPane.showMessageDialog(this,
+                    "File too large (max 10MB).", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            byte[] data = java.nio.file.Files.readAllBytes(file.toPath());
+            appendSystemMessage("Sending file: " + file.getName() + " (" + formatFileSize(file.length()) + ")");
+
+            if (sendListener != null) {
+                sendListener.onSendFile(targetName, file.getName(), data);
+            }
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Failed to read file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Display a received file message with a save button.
+     */
+    public void appendFileMessage(String sender, String fileName, long fileSize, byte[] fileData, boolean isSelf) {
+        StyledDocument doc = messageArea.getStyledDocument();
+        try {
+            String time = LocalDateTime.now().format(TIME_FMT);
+
+            SimpleAttributeSet senderStyle = new SimpleAttributeSet();
+            StyleConstants.setForeground(senderStyle, isSelf ? new Color(100, 180, 255) : new Color(255, 180, 100));
+            StyleConstants.setBold(senderStyle, true);
+            StyleConstants.setFontSize(senderStyle, 12);
+
+            SimpleAttributeSet timeStyle = new SimpleAttributeSet();
+            StyleConstants.setForeground(timeStyle, FG_TIME);
+            StyleConstants.setFontSize(timeStyle, 10);
+
+            SimpleAttributeSet fileStyle = new SimpleAttributeSet();
+            StyleConstants.setForeground(fileStyle, new Color(100, 200, 255));
+            StyleConstants.setFontSize(fileStyle, 13);
+
+            if (doc.getLength() > 0) {
+                doc.insertString(doc.getLength(), "\n", fileStyle);
+            }
+
+            String senderLabel = isSelf ? "You" : sender;
+            doc.insertString(doc.getLength(), senderLabel, senderStyle);
+            doc.insertString(doc.getLength(), "  " + time + "\n", timeStyle);
+            doc.insertString(doc.getLength(), "📎 " + fileName + " (" + formatFileSize(fileSize) + ")\n", fileStyle);
+
+        } catch (BadLocationException e) {
+            e.printStackTrace();
+        }
+        messageArea.setCaretPosition(doc.getLength());
+
+        // Add save button if received (not self)
+        if (!isSelf && fileData != null) {
+            JButton saveBtn = new JButton("💾 Save File");
+            saveBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            saveBtn.setBackground(new Color(60, 60, 65));
+            saveBtn.setForeground(new Color(100, 200, 255));
+            saveBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            saveBtn.addActionListener(e -> saveReceivedFile(fileName, fileData));
+
+            // Insert button into text pane
+            messageArea.setCaretPosition(messageArea.getDocument().getLength());
+            messageArea.insertComponent(saveBtn);
+
+            try {
+                StyledDocument d = messageArea.getStyledDocument();
+                d.insertString(d.getLength(), "\n", new SimpleAttributeSet());
+            } catch (BadLocationException ex) {
+                // ignore
+            }
+        }
+    }
+
+    private void saveReceivedFile(String fileName, byte[] data) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setSelectedFile(new File(fileName));
+        int result = chooser.showSaveDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            try (FileOutputStream fos = new FileOutputStream(chooser.getSelectedFile())) {
+                fos.write(data);
+                appendSystemMessage("File saved: " + chooser.getSelectedFile().getName());
+            } catch (IOException ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Failed to save file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        return String.format("%.1f MB", bytes / (1024.0 * 1024));
+    }
+
     // --- Getters ---
 
     public String getTargetName() {
@@ -280,9 +405,10 @@ public class ChatPanel extends JPanel {
     }
 
     /**
-     * Callback for when user sends a message.
+     * Callback for when user sends a message or file.
      */
     public interface ChatSendListener {
         void onSendMessage(String target, String text);
+        void onSendFile(String target, String fileName, byte[] data);
     }
 }

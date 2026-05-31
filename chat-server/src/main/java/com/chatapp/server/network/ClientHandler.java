@@ -70,6 +70,9 @@ public class ClientHandler implements Runnable {
             case TEXT:
                 handleTextMessage(message);
                 break;
+            case FILE_SEND:
+                handleFileMessage(message);
+                break;
             case PING:
                 sendMessage(Message.systemMessage(MessageType.PONG, "pong"));
                 break;
@@ -164,6 +167,27 @@ public class ClientHandler implements Runnable {
         boolean sent = ServerManager.getInstance().sendToUser(receiver, message);
         if (!sent) {
             sendMessage(Message.systemMessage(MessageType.ERROR, "User '" + receiver + "' is not online."));
+        }
+    }
+
+    /**
+     * Handle file transfer: forward file data to the receiver.
+     */
+    private void handleFileMessage(Message message) {
+        String receiver = message.getReceiver();
+        if (receiver == null || receiver.trim().isEmpty()) {
+            sendMessage(Message.systemMessage(MessageType.ERROR, "Receiver not specified."));
+            return;
+        }
+
+        // Change type to FILE_RECEIVE for the recipient
+        message.setType(MessageType.FILE_RECEIVE);
+
+        boolean sent = ServerManager.getInstance().sendToUser(receiver, message);
+        if (!sent) {
+            sendMessage(Message.systemMessage(MessageType.ERROR, "User '" + receiver + "' is not online. File not sent."));
+        } else {
+            log(username + " sent file '" + message.getFileName() + "' to " + receiver);
         }
     }
 
