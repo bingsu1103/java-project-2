@@ -81,6 +81,18 @@ public class ClientHandler implements Runnable {
             case FILE_SEND:
                 handleFileMessage(message);
                 break;
+            case VOICE_CALL_REQUEST:
+            case VOICE_CALL_ACCEPT:
+            case VOICE_CALL_REJECT:
+            case VOICE_CALL_END:
+            case VOICE_DATA:
+            case VIDEO_CALL_REQUEST:
+            case VIDEO_CALL_ACCEPT:
+            case VIDEO_CALL_REJECT:
+            case VIDEO_CALL_END:
+            case VIDEO_DATA:
+                handleForwardMessage(message);
+                break;
             case PING:
                 sendMessage(Message.systemMessage(MessageType.PONG, "pong"));
                 break;
@@ -201,6 +213,19 @@ public class ClientHandler implements Runnable {
             sendMessage(Message.systemMessage(MessageType.ERROR, "User '" + receiver + "' is not online. File not sent."));
         } else {
             log(username + " sent file '" + message.getFileName() + "' to " + receiver);
+        }
+    }
+
+    private void handleForwardMessage(Message message) {
+        String receiver = message.getReceiver();
+        if (receiver == null || receiver.trim().isEmpty()) {
+            sendMessage(Message.systemMessage(MessageType.ERROR, "Receiver not specified."));
+            return;
+        }
+
+        boolean sent = ServerManager.getInstance().sendToUser(receiver, message);
+        if (!sent) {
+            sendMessage(Message.systemMessage(MessageType.ERROR, "User '" + receiver + "' is offline."));
         }
     }
 

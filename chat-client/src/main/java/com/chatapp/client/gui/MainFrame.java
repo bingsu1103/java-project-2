@@ -54,6 +54,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
     private ChatClient chatClient;
     private String username;
     private ChatHistoryManager historyManager;
+    private CallDialog activeCallDialog;
 
     public MainFrame(ChatClient chatClient, String username) {
         super("Chat App - " + username);
@@ -379,6 +380,16 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             public void onClearHistory(String target) {
                 historyManager.clearHistory(target);
             }
+
+            @Override
+            public void onVoiceCallRequested(String target) {
+                startCall(target, false);
+            }
+
+            @Override
+            public void onVideoCallRequested(String target) {
+                startCall(target, true);
+            }
         });
 
         // Load History
@@ -532,6 +543,40 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 case FILE_RECEIVE:
                     handleIncomingFile(message);
                     break;
+                case VOICE_CALL_REQUEST:
+                    handleIncomingCall(message.getSender(), false);
+                    break;
+                case VIDEO_CALL_REQUEST:
+                    handleIncomingCall(message.getSender(), true);
+                    break;
+                case VOICE_CALL_ACCEPT:
+                case VIDEO_CALL_ACCEPT:
+                    if (activeCallDialog != null) {
+                        activeCallDialog.handleCallAccepted();
+                    }
+                    break;
+                case VOICE_CALL_REJECT:
+                case VIDEO_CALL_REJECT:
+                    if (activeCallDialog != null) {
+                        activeCallDialog.handleCallRejected();
+                    }
+                    break;
+                case VOICE_CALL_END:
+                case VIDEO_CALL_END:
+                    if (activeCallDialog != null) {
+                        activeCallDialog.handleCallEnded();
+                    }
+                    break;
+                case VOICE_DATA:
+                    if (activeCallDialog != null) {
+                        activeCallDialog.handleVoiceData(message.getContent());
+                    }
+                    break;
+                case VIDEO_DATA:
+                    if (activeCallDialog != null) {
+                        activeCallDialog.handleVideoData(message.getContent());
+                    }
+                    break;
                 default:
                     break;
             }
@@ -629,6 +674,30 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
             }
         }
+    }
+
+    private void startCall(String target, boolean isVideo) {
+        if (activeCallDialog != null && activeCallDialog.isDisplayable()) {
+            JOptionPane.showMessageDialog(this, "You are already in an active call.", "Call Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        MessageType type = isVideo ? MessageType.VIDEO_CALL_REQUEST : MessageType.VOICE_CALL_REQUEST;
+        chatClient.sendMessage(new Message(type, username, target, ""));
+
+        activeCallDialog = new CallDialog(this, chatClient, username, target, isVideo, false);
+        activeCallDialog.setVisible(true);
+    }
+
+    private void handleIncomingCall(String caller, boolean isVideo) {
+        if (activeCallDialog != null && activeCallDialog.isDisplayable()) {
+            MessageType rejectType = isVideo ? MessageType.VIDEO_CALL_REJECT : MessageType.VOICE_CALL_REJECT;
+            chatClient.sendMessage(new Message(rejectType, username, caller, ""));
+            return;
+        }
+
+        activeCallDialog = new CallDialog(this, chatClient, username, caller, isVideo, true);
+        activeCallDialog.setVisible(true);
     }
 
     private void updateUserCount() {

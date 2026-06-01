@@ -1,0 +1,138 @@
+package com.chatapp.client.media;
+
+import com.chatapp.client.network.ChatClient;
+import com.chatapp.common.model.Message;
+import com.chatapp.common.protocol.MessageType;
+import javax.sound.sampled.*;
+import java.io.ByteArrayOutputStream;
+import java.util.Base64;
+
+/**
+ * Manages audio recording and playback for voice chats.
+ * Uses Java Sound API and encodes audio frames in Base64 over TCP.
+ */
+public class VoiceCallManager {
+    private final ChatClient chatClient;
+    private final String myUsername;
+    private final String targetUser;
+    
+    private TargetDataLine targetLine;
+    private SourceDataLine sourceLine;
+    private boolean isCalling;
+    
+    private Thread captureThread;
+    
+    public VoiceCallManager(ChatClient chatClient, String myUsername, String targetUser) {
+        this.chatClient = chatClient;
+        this.myUsername = myUsername;
+        this.targetUser = targetUser;
+        this.isCalling = false;
+    }
+    
+    /**
+     * Define the audio format (telephony standard).
+     * 8000 Hz, 8-bit, mono, signed, big-endian = false.
+     * Highly portable, low-bandwidth.
+     */
+    public static AudioFormat getAudioFormat() {
+        float sampleRate = 8000.0f;
+        int sampleSizeInBits = 8;
+        int channels = 1;
+        boolean signed = true;
+        boolean bigEndian = false;
+        return new AudioFormat(sampleRate, sampleSizeInBits, channels, signed, bigEndian);
+    }
+    
+    public synchronized void startCall() {
+        if (isCalling) return;
+        isCalling = true;
+        
+        // Start playback source line
+        try {
+            AudioFormat format = getAudioFormat();
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+            if (!AudioSystem.isLineSupported(info)) {
+                System.err.println("Playback line not supported by the system.");
+            } else {
+                sourceLine = (SourceDataLine) AudioSystem.getLine(info);
+                sourceLine.open(format);
+                sourceLine.start();
+            }
+        } catch (LineUnavailableException e) {
+            System.err.println("Playback line unavailable: " + e.getMessage());
+        }
+        
+        // Start capture thread
+        captureThread = new Thread(this::captureAudio, "VoiceCall-Capture-" + targetUser);
+        captureThread.setDaemon(true);
+        captureThread.start();
+    }
+    
+    public synchronized void stopCall() {
+        if (!isCalling) return;
+        isCalling = false;
+        
+        if (targetLine != null) {
+            try {
+                targetLine.stop();
+                targetLine.close();
+            } catch (Exception ignored) {}
+            targetLine = null;
+        }
+        
+        if (sourceLine != null) {
+            try {
+                sourceLine.stop();
+                sourceLine.close();
+            } catch (Exception ignored) {}
+            sourceLine = null;
+        }
+        
+        if (captureThread != null) {
+            captureThread.interrupt();
+            captureThread = null;
+        }
+    }
+    
+    private void captureAudio() {
+        AudioFormat format = getAudioFormat();
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+        if (!AudioSystem.isLineSupported(info)) {
+            System.err.println("Microphone line not supported by the system.");
+            return;
+        }
+        
+        try {
+            targetLine = (TargetDataLine) AudioSystem.getLine(info);
+            targetLine.open(format);
+            targetLine.start();
+            
+            byte[] buffer = new byte[512]; // Small buffer for low latency
+            while (isCalling && !Thread.currentThread().isInterrupted()) {
+                int read = targetLine.read(buffer, 0, buffer.length);
+                if (read > 0) {
+                    byte[] data = new byte[read];
+                    System.arraycopy(buffer, 0, data, 0, read);
+                    
+                    String base64Data = Base64.getEncoder().encodeToString(data);
+                    Message msg = new Message(MessageType.VOICE_DATA, myUsername, targetUser, base64Data);
+                    chatClient.sendMessage(msg);
+                }
+            }
+        } catch (LineUnavailableException e) {
+            System.err.println("Microphone line unavailable: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Audio capture error: " + e.getMessage());
+        }
+    }
+    
+    public void receiveAudio(String base64Data) {
+        if (!isCalling || sourceLine == null) return;
+        try {
+            byte[] data = Base64.getDecoder().decode(base64Data);
+            sourceLine.write(data, 0, data.length);
+        } catch (Exception e) {
+            System.err.println("Audio playback error: " + e.getMessage());
+        }
+    }
+}

@@ -119,6 +119,37 @@ public class ChatPanel extends JPanel {
         statusLabel.setForeground(new Color(46, 160, 67));
 
         rightPanel.add(clearBtn);
+        
+        if (!targetName.endsWith(" (Group)")) {
+            JButton voiceCallBtn = new JButton("📞 Call");
+            voiceCallBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            voiceCallBtn.setForeground(FG_TEXT);
+            voiceCallBtn.setBackground(new Color(60, 60, 65));
+            voiceCallBtn.setFocusPainted(false);
+            voiceCallBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            voiceCallBtn.setToolTipText("Voice Call");
+            voiceCallBtn.addActionListener(e -> {
+                if (sendListener != null) {
+                    sendListener.onVoiceCallRequested(targetName);
+                }
+            });
+            rightPanel.add(voiceCallBtn);
+
+            JButton videoCallBtn = new JButton("📹 Video");
+            videoCallBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            videoCallBtn.setForeground(FG_TEXT);
+            videoCallBtn.setBackground(new Color(60, 60, 65));
+            videoCallBtn.setFocusPainted(false);
+            videoCallBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            videoCallBtn.setToolTipText("Video Call");
+            videoCallBtn.addActionListener(e -> {
+                if (sendListener != null) {
+                    sendListener.onVideoCallRequested(targetName);
+                }
+            });
+            rightPanel.add(videoCallBtn);
+        }
+
         rightPanel.add(statusLabel);
 
         header.add(rightPanel, BorderLayout.EAST);
@@ -484,5 +515,7 @@ public class ChatPanel extends JPanel {
         void onSendMessage(String target, String text);
         void onSendFile(String target, String fileName, byte[] data);
         void onClearHistory(String target);
+        default void onVoiceCallRequested(String target) {}
+        default void onVideoCallRequested(String target) {}
     }
 }
