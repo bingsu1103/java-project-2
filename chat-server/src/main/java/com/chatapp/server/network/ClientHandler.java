@@ -244,12 +244,23 @@ public class ClientHandler implements Runnable {
         ChatGroup group = ServerManager.getInstance().getGroup(groupId);
         if (group != null) {
             group.removeMember(username);
-            ServerManager.getInstance().updateGroup(group);
             log(username + " left group " + group.getGroupName() + " (" + groupId + ")");
-            // Broadcast GROUP_LEAVE notification to the remaining members of the group
-            Message leaveNotify = new Message(MessageType.GROUP_LEAVE, username, groupId, username + " left the group.");
-            com.chatapp.server.repository.GroupHistoryRepository.getInstance().saveGroupMessage(groupId, leaveNotify);
-            ServerManager.getInstance().sendToGroup(groupId, leaveNotify);
+            
+            if (group.getMembers().isEmpty()) {
+                ServerManager.getInstance().removeGroup(groupId);
+                log("Group " + group.getGroupName() + " (" + groupId + ") has no members left. Deleted group configuration.");
+                // Delete server group history file
+                java.io.File historyFile = new java.io.File("chat-data" + java.io.File.separator + "group-history" + java.io.File.separator + groupId + ".json");
+                if (historyFile.exists()) {
+                    historyFile.delete();
+                }
+            } else {
+                ServerManager.getInstance().updateGroup(group);
+                // Broadcast GROUP_LEAVE notification to the remaining members of the group
+                Message leaveNotify = new Message(MessageType.GROUP_LEAVE, username, groupId, username + " left the group.");
+                com.chatapp.server.repository.GroupHistoryRepository.getInstance().saveGroupMessage(groupId, leaveNotify);
+                ServerManager.getInstance().sendToGroup(groupId, leaveNotify);
+            }
         }
     }
 

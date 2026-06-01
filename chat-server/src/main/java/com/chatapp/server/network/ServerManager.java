@@ -105,6 +105,11 @@ public class ServerManager {
         com.chatapp.server.repository.GroupRepository.getInstance().saveGroups();
     }
 
+    public void removeGroup(String groupId) {
+        groups.remove(groupId);
+        com.chatapp.server.repository.GroupRepository.getInstance().removeGroup(groupId);
+    }
+
     public ChatGroup getGroup(String groupId) {
         return groups.get(groupId);
     }
