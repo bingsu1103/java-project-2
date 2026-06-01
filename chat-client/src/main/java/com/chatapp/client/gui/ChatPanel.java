@@ -36,11 +36,17 @@ public class ChatPanel extends JPanel {
     private JTextArea inputArea;
     private JButton sendButton;
     private JCheckBox enterToSendCheckbox;
+    private JLabel statusLabel;
+    private JButton emojiButton;
+    private JButton fileButton;
+    private JButton voiceCallBtn;
+    private JButton videoCallBtn;
 
     // --- State ---
     private String myUsername;
     private String targetName; // User or group name
     private boolean enterToSend = true;
+    private boolean isTargetOnline = true;
 
     // --- Callback ---
     private ChatSendListener sendListener;
@@ -114,14 +120,14 @@ public class ChatPanel extends JPanel {
             }
         });
 
-        JLabel statusLabel = new JLabel("Online ●");
+        statusLabel = new JLabel("Online ●");
         statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         statusLabel.setForeground(new Color(46, 160, 67));
 
         rightPanel.add(clearBtn);
         
         if (!targetName.endsWith(" (Group)")) {
-            JButton voiceCallBtn = new JButton("📞 Call");
+            voiceCallBtn = new JButton("📞 Call");
             voiceCallBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
             voiceCallBtn.setForeground(FG_TEXT);
             voiceCallBtn.setBackground(new Color(60, 60, 65));
@@ -135,7 +141,7 @@ public class ChatPanel extends JPanel {
             });
             rightPanel.add(voiceCallBtn);
 
-            JButton videoCallBtn = new JButton("📹 Video");
+            videoCallBtn = new JButton("📹 Video");
             videoCallBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
             videoCallBtn.setForeground(FG_TEXT);
             videoCallBtn.setBackground(new Color(60, 60, 65));
@@ -148,6 +154,26 @@ public class ChatPanel extends JPanel {
                 }
             });
             rightPanel.add(videoCallBtn);
+        } else {
+            statusLabel.setText("Group ●");
+            statusLabel.setForeground(new Color(100, 150, 255));
+            
+            JButton leaveBtn = new JButton("🚪 Leave");
+            leaveBtn.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            leaveBtn.setForeground(FG_TEXT);
+            leaveBtn.setBackground(new Color(60, 60, 65));
+            leaveBtn.setFocusPainted(false);
+            leaveBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            leaveBtn.setToolTipText("Leave Group");
+            leaveBtn.addActionListener(e -> {
+                int result = JOptionPane.showConfirmDialog(this, "Are you sure you want to leave this group?", "Confirm Leave", JOptionPane.YES_NO_OPTION);
+                if (result == JOptionPane.YES_OPTION) {
+                    if (sendListener != null) {
+                        sendListener.onLeaveGroup();
+                    }
+                }
+            });
+            rightPanel.add(leaveBtn);
         }
 
         rightPanel.add(statusLabel);
@@ -202,7 +228,7 @@ public class ChatPanel extends JPanel {
         leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
         leftPanel.setBackground(new Color(50, 50, 55));
 
-        JButton emojiButton = new JButton("😀");
+        emojiButton = new JButton("😀");
         emojiButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
         emojiButton.setBackground(new Color(50, 50, 55));
         emojiButton.setForeground(FG_TEXT);
@@ -221,7 +247,7 @@ public class ChatPanel extends JPanel {
         });
         leftPanel.add(emojiButton);
 
-        JButton fileButton = new JButton("📎");
+        fileButton = new JButton("📎");
         fileButton.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 18));
         fileButton.setBackground(new Color(50, 50, 55));
         fileButton.setForeground(FG_TEXT);
@@ -277,6 +303,11 @@ public class ChatPanel extends JPanel {
         String text = inputArea.getText().trim();
         if (text.isEmpty()) return;
 
+        if (!targetName.endsWith(" (Group)") && !isTargetOnline) {
+            appendMessage("System", "Đối phương hiện không hoạt động.", false);
+            return;
+        }
+
         // Display own message
         appendMessage(myUsername, text, true);
 
@@ -312,7 +343,12 @@ public class ChatPanel extends JPanel {
             }
         };
         bubble.setOpaque(false);
-        bubble.setBackground(isSelf ? BG_MSG_SELF : BG_MSG_OTHER);
+        boolean isSystem = "System".equalsIgnoreCase(sender);
+        if (isSystem) {
+            bubble.setBackground(new Color(80, 40, 40));
+        } else {
+            bubble.setBackground(isSelf ? BG_MSG_SELF : BG_MSG_OTHER);
+        }
         bubble.setBorder(new EmptyBorder(8, 12, 8, 12));
 
         // Header (Sender + Time)
@@ -320,7 +356,11 @@ public class ChatPanel extends JPanel {
         headerPanel.setOpaque(false);
         JLabel senderLabel = new JLabel(isSelf ? "You" : sender);
         senderLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        senderLabel.setForeground(isSelf ? new Color(200, 230, 255) : new Color(255, 180, 100));
+        if (isSystem) {
+            senderLabel.setForeground(new Color(255, 100, 100));
+        } else {
+            senderLabel.setForeground(isSelf ? new Color(200, 230, 255) : new Color(255, 180, 100));
+        }
         
         JLabel timeLabel = new JLabel(time);
         timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
@@ -399,6 +439,11 @@ public class ChatPanel extends JPanel {
     // --- File transfer ---
 
     private void doSendFile() {
+        if (!targetName.endsWith(" (Group)") && !isTargetOnline) {
+            appendMessage("System", "Đối phương hiện không hoạt động.", false);
+            return;
+        }
+
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Select file to send");
         int result = chooser.showOpenDialog(this);
@@ -508,6 +553,40 @@ public class ChatPanel extends JPanel {
         return targetName;
     }
 
+    public void clearMessages() {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                messageArea.getDocument().remove(0, messageArea.getDocument().getLength());
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+    }
+
+    public void setTargetOnlineStatus(boolean online) {
+        SwingUtilities.invokeLater(() -> {
+            if (targetName.endsWith(" (Group)")) {
+                return;
+            }
+            this.isTargetOnline = online;
+            if (statusLabel != null) {
+                if (online) {
+                    statusLabel.setText("Online ●");
+                    statusLabel.setForeground(new Color(46, 160, 67));
+                } else {
+                    statusLabel.setText("Offline ●");
+                    statusLabel.setForeground(new Color(218, 54, 51));
+                }
+            }
+            if (inputArea != null) inputArea.setEnabled(true);
+            if (sendButton != null) sendButton.setEnabled(true);
+            if (emojiButton != null) emojiButton.setEnabled(true);
+            if (fileButton != null) fileButton.setEnabled(true);
+            if (voiceCallBtn != null) voiceCallBtn.setEnabled(online);
+            if (videoCallBtn != null) videoCallBtn.setEnabled(online);
+        });
+    }
+
     /**
      * Callback for when user sends a message or file.
      */
@@ -517,5 +596,6 @@ public class ChatPanel extends JPanel {
         void onClearHistory(String target);
         default void onVoiceCallRequested(String target) {}
         default void onVideoCallRequested(String target) {}
+        default void onLeaveGroup() {}
     }
 }

@@ -20,7 +20,7 @@ public class ServerManager {
 
     private ServerManager() {
         connectedClients = new ConcurrentHashMap<>();
-        groups = new ConcurrentHashMap<>();
+        groups = new ConcurrentHashMap<>(com.chatapp.server.repository.GroupRepository.getInstance().getAllGroups());
     }
 
     public static synchronized ServerManager getInstance() {
@@ -97,6 +97,12 @@ public class ServerManager {
 
     public void addGroup(ChatGroup group) {
         groups.put(group.getGroupId(), group);
+        com.chatapp.server.repository.GroupRepository.getInstance().addGroup(group);
+    }
+
+    public void updateGroup(ChatGroup group) {
+        groups.put(group.getGroupId(), group);
+        com.chatapp.server.repository.GroupRepository.getInstance().saveGroups();
     }
 
     public ChatGroup getGroup(String groupId) {

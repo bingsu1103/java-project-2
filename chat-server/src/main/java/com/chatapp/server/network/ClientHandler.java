@@ -78,6 +78,12 @@ public class ClientHandler implements Runnable {
             case GROUP_CREATE:
                 handleGroupCreate(message);
                 break;
+            case GROUP_LEAVE:
+                handleGroupLeave(message);
+                break;
+            case HISTORY_REQUEST:
+                handleHistoryRequest(message);
+                break;
             case FILE_SEND:
                 handleFileMessage(message);
                 break;
@@ -127,7 +133,7 @@ public class ClientHandler implements Runnable {
             Message onlineNotify = Message.systemMessage(MessageType.USER_ONLINE, username);
             ServerManager.getInstance().broadcastToAllExcept(username, onlineNotify);
 
-            // Send online user list to the new user after a short delay
+            // Send online user list and group list to the new user after a short delay
             // This ensures the client UI has fully transitioned to MainFrame and registered its listener
             new Thread(() -> {
                 try {
@@ -136,6 +142,7 @@ public class ClientHandler implements Runnable {
                     Thread.currentThread().interrupt();
                 }
                 sendOnlineUserList();
+                sendUserGroupList();
             }).start();
 
             // Notify server GUI
@@ -229,6 +236,44 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private void handleGroupLeave(Message message) {
+        String groupId = message.getContent();
+        if (groupId == null || groupId.trim().isEmpty()) {
+            return;
+        }
+        ChatGroup group = ServerManager.getInstance().getGroup(groupId);
+        if (group != null) {
+            group.removeMember(username);
+            ServerManager.getInstance().updateGroup(group);
+            log(username + " left group " + group.getGroupName() + " (" + groupId + ")");
+            // Broadcast GROUP_LEAVE notification to the remaining members of the group
+            Message leaveNotify = new Message(MessageType.GROUP_LEAVE, username, groupId, username + " left the group.");
+            com.chatapp.server.repository.GroupHistoryRepository.getInstance().saveGroupMessage(groupId, leaveNotify);
+            ServerManager.getInstance().sendToGroup(groupId, leaveNotify);
+        }
+    }
+
+    private void handleHistoryRequest(Message message) {
+        String groupId = message.getContent();
+        if (groupId == null || groupId.trim().isEmpty()) {
+            return;
+        }
+        java.util.List<Message> history = com.chatapp.server.repository.GroupHistoryRepository.getInstance().loadGroupHistory(groupId);
+        String jsonHistory = new com.google.gson.Gson().toJson(history);
+        sendMessage(new Message(MessageType.HISTORY_RESPONSE, "SERVER", groupId, jsonHistory));
+    }
+
+    private void sendUserGroupList() {
+        java.util.List<String> userGroups = new java.util.ArrayList<>();
+        for (ChatGroup g : ServerManager.getInstance().getAllGroups()) {
+            if (g.isMember(username)) {
+                userGroups.add(g.getGroupId() + ":" + g.getGroupName());
+            }
+        }
+        String groupListStr = String.join(",", userGroups);
+        sendMessage(new Message(MessageType.GROUP_LIST, "SERVER", username, groupListStr));
+    }
+
     private void handleGroupCreate(Message message) {
         String groupName = message.getContent();
         String groupId = UUID.randomUUID().toString();
@@ -265,6 +310,9 @@ public class ClientHandler implements Runnable {
             sendMessage(Message.systemMessage(MessageType.ERROR, "Group not found."));
             return;
         }
+        
+        // Save to server group history
+        com.chatapp.server.repository.GroupHistoryRepository.getInstance().saveGroupMessage(groupId, message);
         
         // Broadcast to group members
         ServerManager.getInstance().sendToGroup(groupId, message);

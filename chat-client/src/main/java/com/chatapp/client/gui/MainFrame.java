@@ -45,6 +45,8 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         String id;
         String name;
         GroupItem(String id, String name) { this.id = id; this.name = name; }
+        public String getGroupId() { return id; }
+        public String getGroupName() { return name; }
         @Override public String toString() { return name; }
     }
     private DefaultListModel<GroupItem> groupListModel;
@@ -392,6 +394,10 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             }
         });
 
+        // Set initial online status
+        boolean isOnline = userListModel.contains(targetUser);
+        chatPanel.setTargetOnlineStatus(isOnline);
+
         // Load History
         java.util.List<Message> history = historyManager.loadHistory(targetUser);
         for (Message m : history) {
@@ -437,6 +443,26 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 // target in group chat is groupName + " (Group)", so we use groupId
                 historyManager.clearHistory(groupId);
             }
+
+            @Override
+            public void onLeaveGroup() {
+                // 1. Send GROUP_LEAVE message to server
+                chatClient.sendMessage(new Message(MessageType.GROUP_LEAVE, username, "SERVER", groupId));
+                // 2. Remove group from openChats, groupNames, groupListModel
+                openChats.remove(groupId);
+                groupNames.remove(groupId);
+                for (int i = 0; i < groupListModel.size(); i++) {
+                    if (groupListModel.get(i).getGroupId().equals(groupId)) {
+                        groupListModel.remove(i);
+                        break;
+                    }
+                }
+                // 3. Close the tab
+                int index = chatTabs.indexOfComponent(chatPanel);
+                if (index >= 0) {
+                    chatTabs.removeTabAt(index);
+                }
+            }
         });
 
         // Load History
@@ -444,8 +470,13 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         for (Message m : history) {
             if (m.getType() == MessageType.GROUP_TEXT) {
                 chatPanel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+            } else if (m.getType() == MessageType.GROUP_LEAVE) {
+                chatPanel.appendMessage("System", m.getSender() + " left the group.", false);
             }
         }
+
+        // Request fresh history from server
+        chatClient.sendMessage(new Message(MessageType.HISTORY_REQUEST, username, "SERVER", groupId));
 
         openChats.put(groupId, chatPanel);
         chatTabs.addTab(groupName, chatPanel);
@@ -540,6 +571,15 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 case GROUP_TEXT:
                     handleIncomingGroupText(message);
                     break;
+                case GROUP_LEAVE:
+                    handleGroupMemberLeave(message);
+                    break;
+                case GROUP_LIST:
+                    handleGroupList(message.getContent());
+                    break;
+                case HISTORY_RESPONSE:
+                    handleIncomingHistory(message);
+                    break;
                 case FILE_RECEIVE:
                     handleIncomingFile(message);
                     break;
@@ -613,11 +653,19 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             userListModel.addElement(user);
             updateUserCount();
         }
+        ChatPanel panel = openChats.get(user);
+        if (panel != null) {
+            panel.setTargetOnlineStatus(true);
+        }
     }
 
     private void handleUserOffline(String user) {
         userListModel.removeElement(user);
         updateUserCount();
+        ChatPanel panel = openChats.get(user);
+        if (panel != null) {
+            panel.setTargetOnlineStatus(false);
+        }
     }
 
     private void handleIncomingText(Message message) {
@@ -653,6 +701,79 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
+            }
+        }
+    }
+
+    private void handleGroupMemberLeave(Message message) {
+        String groupId = message.getReceiver(); // receiver is the groupId
+        String sender = message.getSender();
+        
+        historyManager.saveMessage(groupId, message);
+        
+        ChatPanel panel = openChats.get(groupId);
+        if (panel != null) {
+            panel.appendMessage("System", sender + " left the group.", false);
+        }
+    }
+
+    private void handleGroupList(String content) {
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        String[] groups = content.split(",");
+        for (String gStr : groups) {
+            String[] parts = gStr.split(":", 2);
+            if (parts.length == 2) {
+                String groupId = parts[0];
+                String groupName = parts[1];
+                if (!groupNames.containsKey(groupId)) {
+                    groupNames.put(groupId, groupName);
+                    groupListModel.addElement(new GroupItem(groupId, groupName));
+                }
+            }
+        }
+    }
+
+    private void handleIncomingHistory(Message message) {
+        String groupId = message.getReceiver();
+        String jsonHistory = message.getContent();
+        if (groupId == null || jsonHistory == null || jsonHistory.isEmpty()) {
+            return;
+        }
+        
+        java.lang.reflect.Type type = new com.google.gson.reflect.TypeToken<java.util.List<Message>>(){}.getType();
+        java.util.List<Message> serverHistory = new com.google.gson.Gson().fromJson(jsonHistory, type);
+        if (serverHistory == null) return;
+        
+        // Load current local history
+        java.util.List<Message> localHistory = historyManager.loadHistory(groupId);
+        
+        // Find if we have open tab for this group
+        ChatPanel panel = openChats.get(groupId);
+        if (panel == null) return;
+        
+        // We will clear the panel and reload all messages from the fresh server + local history to prevent duplication
+        panel.clearMessages();
+        
+        for (Message m : serverHistory) {
+            // Save to local history if it is not already present
+            boolean exists = false;
+            for (Message lm : localHistory) {
+                if (lm.getSender().equals(m.getSender()) && lm.getContent().equals(m.getContent()) && lm.getTimestamp() == m.getTimestamp()) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                historyManager.saveMessage(groupId, m);
+            }
+            
+            // Append to panel
+            if (m.getType() == MessageType.GROUP_TEXT) {
+                panel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+            } else if (m.getType() == MessageType.GROUP_LEAVE) {
+                panel.appendMessage("System", m.getSender() + " left the group.", false);
             }
         }
     }
