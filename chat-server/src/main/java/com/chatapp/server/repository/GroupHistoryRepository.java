@@ -63,4 +63,21 @@ public class GroupHistoryRepository {
             return new ArrayList<>();
         }
     }
+
+    public synchronized void deleteGroupMessage(String groupId, String sender, String timestamp, String content) {
+        List<Message> history = loadGroupHistory(groupId);
+        boolean removed = history.removeIf(m -> 
+            sender.equals(m.getSender()) && 
+            timestamp.equals(m.getTimestamp()) && 
+            content.equals(m.getContent())
+        );
+        if (removed) {
+            File file = new File(DATA_DIR + File.separator + groupId + ".json");
+            try (Writer writer = new FileWriter(file)) {
+                gson.toJson(history, writer);
+            } catch (IOException e) {
+                System.err.println("Error saving group history for " + groupId + " after deletion: " + e.getMessage());
+            }
+        }
+    }
 }

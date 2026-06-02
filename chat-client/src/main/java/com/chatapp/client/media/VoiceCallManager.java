@@ -1,15 +1,15 @@
 package com.chatapp.client.media;
 
 import com.chatapp.client.network.ChatClient;
-import com.chatapp.common.model.Message;
-import com.chatapp.common.protocol.MessageType;
 import javax.sound.sampled.*;
-import java.io.ByteArrayOutputStream;
-import java.util.Base64;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
 
 /**
  * Manages audio recording and playback for voice chats.
- * Uses Java Sound API and encodes audio frames in Base64 over TCP.
+ * Uses Java Sound API and transmits raw audio frames over UDP.
  */
 public class VoiceCallManager {
     private final ChatClient chatClient;
@@ -21,12 +21,23 @@ public class VoiceCallManager {
     private boolean isCalling;
     
     private Thread captureThread;
+    private Thread receiveThread;
+    
+    private DatagramSocket udpSocket;
+    private InetAddress remoteAddress;
+    private int remotePort;
     
     public VoiceCallManager(ChatClient chatClient, String myUsername, String targetUser) {
         this.chatClient = chatClient;
         this.myUsername = myUsername;
         this.targetUser = targetUser;
         this.isCalling = false;
+        
+        try {
+            this.udpSocket = new DatagramSocket();
+        } catch (SocketException e) {
+            System.err.println("Could not create UDP socket for VoiceCall: " + e.getMessage());
+        }
     }
     
     /**
@@ -41,6 +52,19 @@ public class VoiceCallManager {
         boolean signed = true;
         boolean bigEndian = false;
         return new AudioFormat(sampleRate, sampleSizeInBits, channels, signed, bigEndian);
+    }
+    
+    public int getLocalPort() {
+        return udpSocket != null ? udpSocket.getLocalPort() : 0;
+    }
+    
+    public void setRemoteAddress(String ip, int port) {
+        try {
+            this.remoteAddress = InetAddress.getByName(ip);
+            this.remotePort = port;
+        } catch (java.io.IOException e) {
+            System.err.println("Invalid remote address: " + e.getMessage());
+        }
     }
     
     public synchronized void startCall() {
@@ -66,6 +90,11 @@ public class VoiceCallManager {
         captureThread = new Thread(this::captureAudio, "VoiceCall-Capture-" + targetUser);
         captureThread.setDaemon(true);
         captureThread.start();
+        
+        // Start receive thread
+        receiveThread = new Thread(this::receiveAudioLoop, "VoiceCall-Receive-" + targetUser);
+        receiveThread.setDaemon(true);
+        receiveThread.start();
     }
     
     public synchronized void stopCall() {
@@ -92,6 +121,16 @@ public class VoiceCallManager {
             captureThread.interrupt();
             captureThread = null;
         }
+        
+        if (receiveThread != null) {
+            receiveThread.interrupt();
+            receiveThread = null;
+        }
+        
+        if (udpSocket != null) {
+            udpSocket.close();
+            udpSocket = null;
+        }
     }
     
     private void captureAudio() {
@@ -108,15 +147,13 @@ public class VoiceCallManager {
             targetLine.start();
             
             byte[] buffer = new byte[1024]; // Low latency buffer
+            int packetCount = 0;
             while (isCalling && !Thread.currentThread().isInterrupted()) {
                 int read = targetLine.read(buffer, 0, buffer.length);
-                if (read > 0) {
-                    byte[] data = new byte[read];
-                    System.arraycopy(buffer, 0, data, 0, read);
-                    
-                    String base64Data = Base64.getEncoder().encodeToString(data);
-                    Message msg = new Message(MessageType.VOICE_DATA, myUsername, targetUser, base64Data);
-                    chatClient.sendMessage(msg);
+                if (read > 0 && remoteAddress != null && remotePort > 0 && udpSocket != null) {
+                    DatagramPacket packet = new DatagramPacket(buffer, read, remoteAddress, remotePort);
+                    udpSocket.send(packet);
+                    packetCount++;
                 }
             }
         } catch (LineUnavailableException e) {
@@ -126,13 +163,27 @@ public class VoiceCallManager {
         }
     }
     
-    public void receiveAudio(String base64Data) {
-        if (!isCalling || sourceLine == null) return;
-        try {
-            byte[] data = Base64.getDecoder().decode(base64Data);
-            sourceLine.write(data, 0, data.length);
-        } catch (Exception e) {
-            System.err.println("Audio playback error: " + e.getMessage());
+    private void receiveAudioLoop() {
+        byte[] receiveBuffer = new byte[4096];
+        int packetCount = 0;
+        while (isCalling && !Thread.currentThread().isInterrupted() && udpSocket != null && !udpSocket.isClosed()) {
+            try {
+                DatagramPacket packet = new DatagramPacket(receiveBuffer, receiveBuffer.length);
+                udpSocket.receive(packet);
+                packetCount++;
+                
+                if (sourceLine != null) {
+                    sourceLine.write(packet.getData(), packet.getOffset(), packet.getLength());
+                }
+            } catch (java.io.IOException e) {
+                if (isCalling) {
+                    System.err.println("Audio receive error: " + e.getMessage());
+                }
+            }
         }
+    }
+    
+    public void receiveAudio(String base64Data) {
+        // Backwards compatibility stub, not used for UDP streaming
     }
 }

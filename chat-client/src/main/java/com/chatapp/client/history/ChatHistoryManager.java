@@ -67,4 +67,30 @@ public class ChatHistoryManager {
             e.printStackTrace();
         }
     }
+
+    public synchronized void deleteMessage(String target, String sender, String timestamp, String content) {
+        Path path = getHistoryFilePath(target);
+        if (!Files.exists(path)) {
+            return;
+        }
+        
+        List<Message> history = loadHistory(target);
+        boolean removed = history.removeIf(m -> 
+            sender.equals(m.getSender()) && 
+            timestamp.equals(m.getTimestamp()) && 
+            content.equals(m.getContent())
+        );
+        
+        if (removed) {
+            try {
+                List<String> lines = new ArrayList<>();
+                for (Message m : history) {
+                    lines.add(Protocol.toJson(m));
+                }
+                Files.write(path, lines);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
 }

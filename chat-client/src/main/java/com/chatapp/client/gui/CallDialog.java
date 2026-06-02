@@ -202,9 +202,34 @@ public class CallDialog extends JDialog {
         }
     }
 
+    public void setRemoteUdpAddress(String address) {
+        if (address != null && address.contains(":")) {
+            String[] parts = address.split(":", 2);
+            String ip = parts[0];
+            int port = Integer.parseInt(parts[1]);
+            if (videoCallManager != null) {
+                videoCallManager.setRemoteAddress(ip, port);
+            }
+            if (voiceCallManager != null) {
+                voiceCallManager.setRemoteAddress(ip, port);
+            }
+        }
+    }
+
+    public int getLocalUdpPort() {
+        if (isVideo && videoCallManager != null) {
+            return videoCallManager.getLocalPort();
+        }
+        if (!isVideo && voiceCallManager != null) {
+            return voiceCallManager.getLocalPort();
+        }
+        return 0;
+    }
+
     private void onAcceptCall() {
+        int localPort = getLocalUdpPort();
         MessageType type = isVideo ? MessageType.VIDEO_CALL_ACCEPT : MessageType.VOICE_CALL_ACCEPT;
-        chatClient.sendMessage(new Message(type, myUsername, targetUser, ""));
+        chatClient.sendMessage(new Message(type, myUsername, targetUser, String.valueOf(localPort)));
         handleCallAccepted();
     }
 

@@ -99,6 +99,9 @@ public class ClientHandler implements Runnable {
             case VIDEO_DATA:
                 handleForwardMessage(message);
                 break;
+            case MESSAGE_DELETE:
+                handleMessageDelete(message);
+                break;
             case PING:
                 sendMessage(Message.systemMessage(MessageType.PONG, "pong"));
                 break;
@@ -223,11 +226,33 @@ public class ClientHandler implements Runnable {
         }
     }
 
+    private String getSenderIP() {
+        if (socket == null || socket.getInetAddress() == null) {
+            return "127.0.0.1";
+        }
+        String ip = socket.getInetAddress().getHostAddress();
+        if (ip.equals("0:0:0:0:0:0:0:1") || ip.equals("::1")) {
+            return "127.0.0.1";
+        }
+        return ip;
+    }
+
     private void handleForwardMessage(Message message) {
         String receiver = message.getReceiver();
         if (receiver == null || receiver.trim().isEmpty()) {
             sendMessage(Message.systemMessage(MessageType.ERROR, "Receiver not specified."));
             return;
+        }
+
+        // Enrich the call request/accept with the sender's IP address
+        if (message.getType() == MessageType.VOICE_CALL_REQUEST ||
+            message.getType() == MessageType.VIDEO_CALL_REQUEST ||
+            message.getType() == MessageType.VOICE_CALL_ACCEPT ||
+            message.getType() == MessageType.VIDEO_CALL_ACCEPT) {
+            
+            String senderIp = getSenderIP();
+            String originalPort = message.getContent();
+            message.setContent(senderIp + ":" + originalPort);
         }
 
         boolean sent = ServerManager.getInstance().sendToUser(receiver, message);
@@ -327,6 +352,31 @@ public class ClientHandler implements Runnable {
         
         // Broadcast to group members
         ServerManager.getInstance().sendToGroup(groupId, message);
+    }
+
+    private void handleMessageDelete(Message message) {
+        String receiver = message.getReceiver();
+        if (receiver == null || receiver.trim().isEmpty()) {
+            return;
+        }
+
+        // Enforce that only the sender/owner of the message has the right to delete it.
+        if (!username.equals(message.getSender())) {
+            sendMessage(Message.systemMessage(MessageType.ERROR, "You only have permission to delete your own messages."));
+            return;
+        }
+
+        if (receiver.contains("-") || ServerManager.getInstance().getGroup(receiver) != null) {
+            // It is a group message deletion!
+            // First delete it from server side history
+            com.chatapp.server.repository.GroupHistoryRepository.getInstance().deleteGroupMessage(receiver, message.getSender(), message.getTimestamp(), message.getContent());
+            // Then forward the deletion message to all group members
+            ServerManager.getInstance().sendToGroup(receiver, message);
+        } else {
+            // It is a 1-to-1 message deletion!
+            // Forward it to the recipient so they delete it locally as well
+            ServerManager.getInstance().sendToUser(receiver, message);
+        }
     }
 
     /**

@@ -370,7 +370,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
 
             @Override
             public void onSendFile(String target, String fileName, byte[] data) {
-                Message fileMsg = new Message(MessageType.FILE_SEND, username, target, null);
+                Message fileMsg = new Message(MessageType.FILE_SEND, username, target, "📎 " + fileName);
                 fileMsg.setFileName(fileName);
                 fileMsg.setFileSize(data.length);
                 fileMsg.setFileData(data);
@@ -381,6 +381,15 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             @Override
             public void onClearHistory(String target) {
                 historyManager.clearHistory(target);
+            }
+
+            @Override
+            public void onDeleteMessage(String sender, String timestamp, String content) {
+                historyManager.deleteMessage(targetUser, sender, timestamp, content);
+                refreshChatPanel(targetUser);
+                Message delMsg = new Message(MessageType.MESSAGE_DELETE, sender, targetUser, content);
+                delMsg.setTimestamp(timestamp);
+                chatClient.sendMessage(delMsg);
             }
 
             @Override
@@ -402,9 +411,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         java.util.List<Message> history = historyManager.loadHistory(targetUser);
         for (Message m : history) {
             if (m.getType() == MessageType.TEXT) {
-                chatPanel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+                chatPanel.appendMessage(m.getSender(), m.getContent(), m.getTimestamp(), m.getSender().equals(username));
             } else if (m.getType() == MessageType.FILE_RECEIVE || m.getType() == MessageType.FILE_SEND) {
-                chatPanel.appendFileMessage(m.getSender(), m.getFileName(), m.getFileSize(), m.getFileData(), m.getSender().equals(username));
+                chatPanel.appendFileMessage(m.getSender(), m.getFileName(), m.getFileSize(), m.getFileData(), m.getTimestamp(), m.getSender().equals(username));
             }
         }
 
@@ -445,6 +454,15 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             }
 
             @Override
+            public void onDeleteMessage(String sender, String timestamp, String content) {
+                historyManager.deleteMessage(groupId, sender, timestamp, content);
+                refreshChatPanel(groupId);
+                Message delMsg = new Message(MessageType.MESSAGE_DELETE, sender, groupId, content);
+                delMsg.setTimestamp(timestamp);
+                chatClient.sendMessage(delMsg);
+            }
+
+            @Override
             public void onLeaveGroup() {
                 // 1. Send GROUP_LEAVE message to server
                 chatClient.sendMessage(new Message(MessageType.GROUP_LEAVE, username, "SERVER", groupId));
@@ -469,7 +487,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         java.util.List<Message> history = historyManager.loadHistory(groupId);
         for (Message m : history) {
             if (m.getType() == MessageType.GROUP_TEXT) {
-                chatPanel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+                chatPanel.appendMessage(m.getSender(), m.getContent(), m.getTimestamp(), m.getSender().equals(username));
             } else if (m.getType() == MessageType.GROUP_LEAVE) {
                 chatPanel.appendMessage("System", m.getSender() + " left the group.", false);
             }
@@ -574,6 +592,9 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                 case GROUP_LEAVE:
                     handleGroupMemberLeave(message);
                     break;
+                case MESSAGE_DELETE:
+                    handleIncomingMessageDelete(message);
+                    break;
                 case GROUP_LIST:
                     handleGroupList(message.getContent());
                     break;
@@ -584,14 +605,15 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
                     handleIncomingFile(message);
                     break;
                 case VOICE_CALL_REQUEST:
-                    handleIncomingCall(message.getSender(), false);
+                    handleIncomingCall(message.getSender(), false, message.getContent());
                     break;
                 case VIDEO_CALL_REQUEST:
-                    handleIncomingCall(message.getSender(), true);
+                    handleIncomingCall(message.getSender(), true, message.getContent());
                     break;
                 case VOICE_CALL_ACCEPT:
                 case VIDEO_CALL_ACCEPT:
                     if (activeCallDialog != null) {
+                        activeCallDialog.setRemoteUdpAddress(message.getContent());
                         activeCallDialog.handleCallAccepted();
                     }
                     break;
@@ -678,7 +700,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         
         ChatPanel panel = openChats.get(sender);
         if (panel != null) {
-            panel.appendMessage(sender, message.getContent(), false);
+            panel.appendMessage(sender, message.getContent(), message.getTimestamp(), false);
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
@@ -697,12 +719,29 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         
         ChatPanel panel = openChats.get(groupId);
         if (panel != null) {
-            panel.appendMessage(message.getSender(), message.getContent(), false);
+            panel.appendMessage(message.getSender(), message.getContent(), message.getTimestamp(), false);
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
             }
         }
+    }
+
+    private void handleIncomingMessageDelete(Message message) {
+        String sender = message.getSender();
+        String receiver = message.getReceiver();
+        String timestamp = message.getTimestamp();
+        String content = message.getContent();
+
+        String tabKey;
+        if (receiver.contains("-") || groupNames.containsKey(receiver)) {
+            tabKey = receiver;
+        } else {
+            tabKey = sender.equals(username) ? receiver : sender;
+        }
+
+        historyManager.deleteMessage(tabKey, sender, timestamp, content);
+        refreshChatPanel(tabKey);
     }
 
     private void handleGroupMemberLeave(Message message) {
@@ -760,7 +799,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             // Save to local history if it is not already present
             boolean exists = false;
             for (Message lm : localHistory) {
-                if (lm.getSender().equals(m.getSender()) && lm.getContent().equals(m.getContent()) && lm.getTimestamp() == m.getTimestamp()) {
+                if (lm.getSender().equals(m.getSender()) && lm.getContent().equals(m.getContent()) && lm.getTimestamp().equals(m.getTimestamp())) {
                     exists = true;
                     break;
                 }
@@ -771,7 +810,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             
             // Append to panel
             if (m.getType() == MessageType.GROUP_TEXT) {
-                panel.appendMessage(m.getSender(), m.getContent(), m.getSender().equals(username));
+                panel.appendMessage(m.getSender(), m.getContent(), m.getTimestamp(), m.getSender().equals(username));
             } else if (m.getType() == MessageType.GROUP_LEAVE) {
                 panel.appendMessage("System", m.getSender() + " left the group.", false);
             }
@@ -789,7 +828,7 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         ChatPanel panel = openChats.get(sender);
         if (panel != null) {
             panel.appendFileMessage(sender, message.getFileName(),
-                    message.getFileSize(), message.getFileData(), false);
+                    message.getFileSize(), message.getFileData(), message.getTimestamp(), false);
             int tabIndex = chatTabs.indexOfComponent(panel);
             if (tabIndex >= 0 && chatTabs.getSelectedIndex() != tabIndex) {
                 chatTabs.setBackgroundAt(tabIndex, ACCENT_BLUE);
@@ -803,14 +842,16 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
             return;
         }
 
-        MessageType type = isVideo ? MessageType.VIDEO_CALL_REQUEST : MessageType.VOICE_CALL_REQUEST;
-        chatClient.sendMessage(new Message(type, username, target, ""));
-
         activeCallDialog = new CallDialog(this, chatClient, username, target, isVideo, false);
+        int localPort = activeCallDialog.getLocalUdpPort();
+
+        MessageType type = isVideo ? MessageType.VIDEO_CALL_REQUEST : MessageType.VOICE_CALL_REQUEST;
+        chatClient.sendMessage(new Message(type, username, target, String.valueOf(localPort)));
+
         activeCallDialog.setVisible(true);
     }
 
-    private void handleIncomingCall(String caller, boolean isVideo) {
+    private void handleIncomingCall(String caller, boolean isVideo, String remoteAddress) {
         if (activeCallDialog != null && activeCallDialog.isDisplayable()) {
             MessageType rejectType = isVideo ? MessageType.VIDEO_CALL_REJECT : MessageType.VOICE_CALL_REJECT;
             chatClient.sendMessage(new Message(rejectType, username, caller, ""));
@@ -818,7 +859,28 @@ public class MainFrame extends JFrame implements ChatClient.MessageListener {
         }
 
         activeCallDialog = new CallDialog(this, chatClient, username, caller, isVideo, true);
+        activeCallDialog.setRemoteUdpAddress(remoteAddress);
         activeCallDialog.setVisible(true);
+    }
+
+    private void refreshChatPanel(String target) {
+        SwingUtilities.invokeLater(() -> {
+            ChatPanel panel = openChats.get(target);
+            if (panel == null) return;
+            
+            panel.clearMessages();
+            
+            java.util.List<Message> history = historyManager.loadHistory(target);
+            for (Message m : history) {
+                if (m.getType() == MessageType.TEXT || m.getType() == MessageType.GROUP_TEXT) {
+                    panel.appendMessage(m.getSender(), m.getContent(), m.getTimestamp(), m.getSender().equals(username));
+                } else if (m.getType() == MessageType.FILE_RECEIVE || m.getType() == MessageType.FILE_SEND) {
+                    panel.appendFileMessage(m.getSender(), m.getFileName(), m.getFileSize(), m.getFileData(), m.getTimestamp(), m.getSender().equals(username));
+                } else if (m.getType() == MessageType.GROUP_LEAVE) {
+                    panel.appendMessage("System", m.getSender() + " left the group.", m.getTimestamp(), false);
+                }
+            }
+        });
     }
 
     private void updateUserCount() {

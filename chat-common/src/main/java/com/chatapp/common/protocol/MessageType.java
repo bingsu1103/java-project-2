@@ -19,6 +19,7 @@ public enum MessageType {
     TEXT,               // Regular text message (1-to-1)
     GROUP_TEXT,         // Text message in a group chat
     EMOJI,              // Emoji message
+    MESSAGE_DELETE,     // Deletion of a single message
 
     // --- File Transfer ---
     FILE_SEND,          // Client sends a file

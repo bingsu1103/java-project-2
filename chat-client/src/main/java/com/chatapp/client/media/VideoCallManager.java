@@ -1,22 +1,28 @@
 package com.chatapp.client.media;
 
 import com.chatapp.client.network.ChatClient;
-import com.chatapp.common.model.Message;
-import com.chatapp.common.protocol.MessageType;
+import org.bytedeco.javacv.Frame;
+import org.bytedeco.javacv.OpenCVFrameGrabber;
+import org.bytedeco.javacv.Java2DFrameConverter;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Base64;
 import java.util.Random;
+import javax.sound.sampled.*;
 
 /**
  * Manages video streaming for private chats.
- * Captures animated mockup frames as standard JPEG stream to Base64 over TCP.
+ * Captures frames using OpenCV (JavaCV) and transmits JPEG bytes over UDP.
  */
 public class VideoCallManager {
     private final ChatClient chatClient;
@@ -25,7 +31,15 @@ public class VideoCallManager {
     
     private boolean isCalling;
     private Thread captureThread;
-    private com.github.sarxos.webcam.Webcam activeWebcam;
+    private Thread receiveThread;
+    private Thread audioCaptureThread;
+    
+    private DatagramSocket udpSocket;
+    private InetAddress remoteAddress;
+    private int remotePort;
+    
+    private TargetDataLine audioTargetLine;
+    private SourceDataLine audioSourceLine;
     
     private final VideoPanel localPanel;
     private final VideoPanel remotePanel;
@@ -39,36 +53,111 @@ public class VideoCallManager {
         this.targetUser = targetUser;
         this.isCalling = false;
         
-        this.localPanel = new VideoPanel("Local Camera Preview");
-        this.remotePanel = new VideoPanel("Remote Camera Stream");
+        this.localPanel = new VideoPanel(myUsername + " (You)");
+        this.remotePanel = new VideoPanel(targetUser);
+        
+        try {
+            this.udpSocket = new DatagramSocket();
+        } catch (SocketException e) {
+            System.err.println("Could not create UDP socket for VideoCall: " + e.getMessage());
+        }
     }
     
     public VideoPanel getLocalPanel() { return localPanel; }
     public VideoPanel getRemotePanel() { return remotePanel; }
     
+    public int getLocalPort() {
+        return udpSocket != null ? udpSocket.getLocalPort() : 0;
+    }
+    
+    public void setRemoteAddress(String ip, int port) {
+        try {
+            this.remoteAddress = InetAddress.getByName(ip);
+            this.remotePort = port;
+        } catch (java.io.IOException e) {
+            System.err.println("Invalid remote address: " + e.getMessage());
+        }
+    }
+    
+    public static AudioFormat getAudioFormat() {
+        float sampleRate = 16000.0f;
+        int sampleSizeInBits = 16;
+        int channels = 1;
+        boolean signed = true;
+        boolean bigEndian = false;
+        return new AudioFormat(sampleRate, sampleSizeInBits, channels, signed, bigEndian);
+    }
+
     public synchronized void startCall() {
         if (isCalling) return;
         isCalling = true;
         
+        // Start playback source line for audio
+        try {
+            AudioFormat format = getAudioFormat();
+            DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
+            if (AudioSystem.isLineSupported(info)) {
+                audioSourceLine = (SourceDataLine) AudioSystem.getLine(info);
+                audioSourceLine.open(format);
+                audioSourceLine.start();
+            } else {
+                System.err.println("Audio playback line not supported by the system.");
+            }
+        } catch (LineUnavailableException e) {
+            System.err.println("Audio playback line unavailable: " + e.getMessage());
+        }
+        
         captureThread = new Thread(this::captureVideo, "VideoCall-Capture-" + targetUser);
         captureThread.setDaemon(true);
         captureThread.start();
+        
+        audioCaptureThread = new Thread(this::captureAudio, "VideoCall-AudioCapture-" + targetUser);
+        audioCaptureThread.setDaemon(true);
+        audioCaptureThread.start();
+        
+        receiveThread = new Thread(this::receiveVideoLoop, "VideoCall-Receive-" + targetUser);
+        receiveThread.setDaemon(true);
+        receiveThread.start();
     }
     
     public synchronized void stopCall() {
         if (!isCalling) return;
         isCalling = false;
         
-        if (activeWebcam != null) {
+        if (audioTargetLine != null) {
             try {
-                activeWebcam.close();
+                audioTargetLine.stop();
+                audioTargetLine.close();
             } catch (Exception ignored) {}
-            activeWebcam = null;
+            audioTargetLine = null;
+        }
+        
+        if (audioSourceLine != null) {
+            try {
+                audioSourceLine.stop();
+                audioSourceLine.close();
+            } catch (Exception ignored) {}
+            audioSourceLine = null;
         }
         
         if (captureThread != null) {
             captureThread.interrupt();
             captureThread = null;
+        }
+        
+        if (audioCaptureThread != null) {
+            audioCaptureThread.interrupt();
+            audioCaptureThread = null;
+        }
+        
+        if (receiveThread != null) {
+            receiveThread.interrupt();
+            receiveThread = null;
+        }
+        
+        if (udpSocket != null) {
+            udpSocket.close();
+            udpSocket = null;
         }
         
         localPanel.clearFrame();
@@ -79,49 +168,56 @@ public class VideoCallManager {
         int width = 320;
         int height = 240;
         
+        OpenCVFrameGrabber grabber = null;
+        Java2DFrameConverter converter = new Java2DFrameConverter();
+        
         try {
-            activeWebcam = com.github.sarxos.webcam.Webcam.getDefault();
-            if (activeWebcam != null) {
-                java.awt.Dimension[] sizes = activeWebcam.getViewSizes();
-                boolean sizeSupported = false;
-                for (java.awt.Dimension d : sizes) {
-                    if (d.width == width && d.height == height) {
-                        sizeSupported = true;
-                        break;
-                    }
-                }
-                if (sizeSupported) {
-                    activeWebcam.setViewSize(new java.awt.Dimension(width, height));
-                } else if (sizes.length > 0) {
-                    activeWebcam.setViewSize(sizes[0]);
-                    width = sizes[0].width;
-                    height = sizes[0].height;
-                }
-                activeWebcam.open();
-            }
+            grabber = new OpenCVFrameGrabber(0);
+            grabber.setImageWidth(width);
+            grabber.setImageHeight(height);
+            grabber.start();
         } catch (Exception e) {
-            System.err.println("Webcam initialization failed, falling back to simulator: " + e.getMessage());
-            activeWebcam = null;
+            System.err.println("OpenCV Webcam initialization failed, falling back to simulator: " + e.getMessage());
+            grabber = null;
         }
         
-        BufferedImage simImage = new BufferedImage(320, 240, BufferedImage.TYPE_INT_RGB);
+        BufferedImage simImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Graphics2D simG = simImage.createGraphics();
         
-        int ballX = 320 / 2;
-        int ballY = 240 / 2;
+        int ballX = width / 2;
+        int ballY = height / 2;
         int ballDX = 4;
         int ballDY = 3;
         int ballRadius = 25;
         
         int pulseCount = 0;
+        int consecutiveBlackFrames = 0;
+        boolean permissionWarned = false;
+        int sendPacketCount = 0;
         
         while (isCalling && !Thread.currentThread().isInterrupted()) {
             BufferedImage currentFrame = null;
-            if (activeWebcam != null && activeWebcam.isOpen()) {
+            if (grabber != null) {
                 try {
-                    currentFrame = activeWebcam.getImage();
+                    Frame frame = grabber.grab();
+                    if (frame != null) {
+                        currentFrame = converter.convert(frame);
+                        if (isFrameBlack(currentFrame)) {
+                            consecutiveBlackFrames++;
+                            if (consecutiveBlackFrames > 30) {
+                                if (!permissionWarned) {
+                                    System.err.println("[WARNING] Camera is returning black frames. This is usually caused by missing macOS Camera Permissions.");
+                                    System.err.println("Please go to System Settings > Privacy & Security > Camera and ensure Terminal/IDE (where Java is running) is allowed.");
+                                    permissionWarned = true;
+                                }
+                                currentFrame = null; // Fallback to simulator
+                            }
+                        } else {
+                            consecutiveBlackFrames = 0;
+                        }
+                    }
                 } catch (Exception e) {
-                    System.err.println("Failed to get webcam frame: " + e.getMessage());
+                    System.err.println("Failed to get opencv frame: " + e.getMessage());
                 }
             }
             
@@ -152,25 +248,25 @@ public class VideoCallManager {
             } else {
                 simG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 simG.setColor(new Color(30, 30, 35));
-                simG.fillRect(0, 0, 320, 240);
+                simG.fillRect(0, 0, width, height);
                 
                 simG.setColor(new Color(45, 45, 50));
-                for (int i = 0; i < 320; i += 40) {
-                    simG.drawLine(i, 0, i, 240);
+                for (int i = 0; i < width; i += 40) {
+                    simG.drawLine(i, 0, i, height);
                 }
-                for (int i = 0; i < 240; i += 40) {
-                    simG.drawLine(0, i, 320, i);
+                for (int i = 0; i < height; i += 40) {
+                    simG.drawLine(0, i, width, i);
                 }
                 
                 ballX += ballDX;
                 ballY += ballDY;
-                if (ballX - ballRadius < 0 || ballX + ballRadius > 320) {
+                if (ballX - ballRadius < 0 || ballX + ballRadius > width) {
                     ballDX = -ballDX;
-                    ballX = Math.max(ballRadius, Math.min(320 - ballRadius, ballX));
+                    ballX = Math.max(ballRadius, Math.min(width - ballRadius, ballX));
                 }
-                if (ballY - ballRadius < 0 || ballY + ballRadius > 240) {
+                if (ballY - ballRadius < 0 || ballY + ballRadius > height) {
                     ballDY = -ballDY;
-                    ballY = Math.max(ballRadius, Math.min(240 - ballRadius, ballY));
+                    ballY = Math.max(ballRadius, Math.min(height - ballRadius, ballY));
                 }
                 
                 float h = (System.currentTimeMillis() % 4000) / 4000.0f;
@@ -187,33 +283,33 @@ public class VideoCallManager {
                 simG.drawOval(ballX - ballRadius, ballY - ballRadius, ballRadius * 2, ballRadius * 2);
                 
                 for (int i = 0; i < 300; i++) {
-                    int nx = random.nextInt(320);
-                    int ny = random.nextInt(240);
+                    int nx = random.nextInt(width);
+                    int ny = random.nextInt(height);
                     int nval = random.nextInt(40) + 10;
                     simG.setColor(new Color(255, 255, 255, nval));
                     simG.fillRect(nx, ny, 1, 1);
                 }
                 
-                int scanY = (int) ((System.currentTimeMillis() / 15) % 240);
+                int scanY = (int) ((System.currentTimeMillis() / 15) % height);
                 simG.setColor(new Color(0, 255, 0, 25));
-                simG.fillRect(0, scanY - 2, 320, 4);
+                simG.fillRect(0, scanY - 2, width, 4);
                 simG.setColor(new Color(0, 255, 0, 40));
-                simG.drawLine(0, scanY, 320, scanY);
+                simG.drawLine(0, scanY, width, scanY);
                 
                 simG.setFont(new Font("Monospaced", Font.BOLD, 12));
                 simG.setColor(new Color(255, 255, 255, 180));
                 simG.drawString("CAMERA SIMULATOR: " + myUsername.toUpperCase(), 15, 25);
                 
                 String timeStr = LocalDateTime.now().format(TIME_FMT);
-                simG.drawString(timeStr, 15, 240 - 15);
+                simG.drawString(timeStr, 15, height - 15);
                 
                 pulseCount++;
                 if ((pulseCount / 3) % 2 == 0) {
                     simG.setColor(Color.RED);
-                    simG.fillOval(320 - 55, 14, 10, 10);
+                    simG.fillOval(width - 55, 14, 10, 10);
                     simG.setFont(new Font("Segoe UI", Font.BOLD, 11));
                     simG.setColor(Color.WHITE);
-                    simG.drawString("REC", 320 - 40, 23);
+                    simG.drawString("REC", width - 40, 23);
                 }
                 
                 imageToSend = simImage;
@@ -226,41 +322,137 @@ public class VideoCallManager {
                 ImageIO.write(imageToSend, "jpg", baos);
                 byte[] jpegData = baos.toByteArray();
                 
-                String base64Data = Base64.getEncoder().encodeToString(jpegData);
-                Message msg = new Message(MessageType.VIDEO_DATA, myUsername, targetUser, base64Data);
-                chatClient.sendMessage(msg);
+                if (remoteAddress != null && remotePort > 0 && udpSocket != null) {
+                    byte[] packetData = new byte[jpegData.length + 1];
+                    packetData[0] = 0x00; // 0x00 for Video
+                    System.arraycopy(jpegData, 0, packetData, 1, jpegData.length);
+                    
+                    DatagramPacket packet = new DatagramPacket(packetData, packetData.length, remoteAddress, remotePort);
+                    udpSocket.send(packet);
+                    sendPacketCount++;
+                }
             } catch (Exception e) {
-                System.err.println("Video frame compression error: " + e.getMessage());
+                System.err.println("Video frame compression/send error: " + e.getMessage());
             }
             
             try {
-                Thread.sleep(100); // 10 fps
+                Thread.sleep(70); // ~14 FPS
             } catch (InterruptedException e) {
                 break;
             }
         }
         
         simG.dispose();
+        converter.close();
         
-        if (activeWebcam != null) {
+        if (grabber != null) {
             try {
-                activeWebcam.close();
+                grabber.stop();
+                grabber.close();
             } catch (Exception ignored) {}
-            activeWebcam = null;
+        }
+    }
+    
+    private void captureAudio() {
+        AudioFormat format = getAudioFormat();
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+        if (!AudioSystem.isLineSupported(info)) {
+            System.err.println("Microphone line not supported by the system.");
+            return;
+        }
+        
+        try {
+            audioTargetLine = (TargetDataLine) AudioSystem.getLine(info);
+            audioTargetLine.open(format);
+            audioTargetLine.start();
+            
+            byte[] buffer = new byte[1024]; // Low latency buffer
+            int packetCount = 0;
+            while (isCalling && !Thread.currentThread().isInterrupted()) {
+                int read = audioTargetLine.read(buffer, 0, buffer.length);
+                if (read > 0 && remoteAddress != null && remotePort > 0 && udpSocket != null) {
+                    byte[] packetData = new byte[read + 1];
+                    packetData[0] = 0x01; // 0x01 for Audio
+                    System.arraycopy(buffer, 0, packetData, 1, read);
+                    
+                    DatagramPacket packet = new DatagramPacket(packetData, packetData.length, remoteAddress, remotePort);
+                    try {
+                        udpSocket.send(packet);
+                        packetCount++;
+                    } catch (Exception e) {
+                        break;
+                    }
+                }
+            }
+        } catch (LineUnavailableException e) {
+            System.err.println("Microphone line unavailable: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Audio capture error: " + e.getMessage());
+        }
+    }
+
+    private void receiveVideoLoop() {
+        byte[] receiveBuffer = new byte[65507];
+        int videoCount = 0;
+        int audioCount = 0;
+        while (isCalling && !Thread.currentThread().isInterrupted() && udpSocket != null && !udpSocket.isClosed()) {
+            try {
+                DatagramPacket packet = new DatagramPacket(receiveBuffer, receiveBuffer.length);
+                udpSocket.receive(packet);
+                
+                int len = packet.getLength();
+                if (len < 1) continue;
+                
+                byte type = packet.getData()[packet.getOffset()];
+                if (type == 0x00) { // Video packet
+                    videoCount++;
+                    
+                    byte[] data = new byte[len - 1];
+                    System.arraycopy(packet.getData(), packet.getOffset() + 1, data, 0, len - 1);
+                    
+                    BufferedImage img = ImageIO.read(new ByteArrayInputStream(data));
+                    if (img != null) {
+                        remotePanel.setFrame(img);
+                    }
+                } else if (type == 0x01) { // Audio packet
+                    audioCount++;
+                    
+                    if (audioSourceLine != null) {
+                        audioSourceLine.write(packet.getData(), packet.getOffset() + 1, len - 1);
+                    }
+                }
+            } catch (java.io.IOException e) {
+                if (isCalling) {
+                    System.err.println("Video/Audio receive error: " + e.getMessage());
+                }
+            }
         }
     }
     
     public void receiveVideo(String base64Data) {
-        if (!isCalling) return;
-        try {
-            byte[] data = Base64.getDecoder().decode(base64Data);
-            BufferedImage img = ImageIO.read(new ByteArrayInputStream(data));
-            if (img != null) {
-                remotePanel.setFrame(img);
+        // Backwards compatibility stub, not used for UDP streaming
+    }
+    
+    private boolean isFrameBlack(BufferedImage img) {
+        if (img == null) return true;
+        int w = img.getWidth();
+        int h = img.getHeight();
+        int[] samples = {
+            img.getRGB(w / 2, h / 2),
+            img.getRGB(w / 4, h / 4),
+            img.getRGB(3 * w / 4, 3 * h / 4),
+            img.getRGB(w / 4, 3 * h / 4),
+            img.getRGB(3 * w / 4, h / 4)
+        };
+        for (int rgb : samples) {
+            int r = (rgb >> 16) & 0xFF;
+            int g = (rgb >> 8) & 0xFF;
+            int b = rgb & 0xFF;
+            if (r > 8 || g > 8 || b > 8) {
+                return false;
             }
-        } catch (Exception e) {
-            System.err.println("Video frame receive error: " + e.getMessage());
         }
+        return true;
     }
     
     public static class VideoPanel extends JPanel {
@@ -313,6 +505,24 @@ public class VideoCallManager {
                     y = getHeight() / 2 + 15;
                     g.drawString(sub, x, y);
                 }
+                
+                // Translucent label overlay badge at top-left corner
+                g.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                FontMetrics fm = g.getFontMetrics();
+                int labelWidth = fm.stringWidth(label);
+                int labelHeight = fm.getHeight();
+                
+                // Background badge
+                g.setColor(new Color(0, 0, 0, 160));
+                g.fillRoundRect(8, 8, labelWidth + 16, labelHeight + 8, 8, 8);
+                
+                // Border badge
+                g.setColor(new Color(255, 255, 255, 60));
+                g.drawRoundRect(8, 8, labelWidth + 16, labelHeight + 8, 8, 8);
+                
+                // Text
+                g.setColor(Color.WHITE);
+                g.drawString(label, 16, 8 + labelHeight + 2);
             }
         }
     }

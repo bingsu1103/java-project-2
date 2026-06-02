@@ -322,14 +322,48 @@ public class ChatPanel extends JPanel {
 
     // --- Display messages ---
 
+    public void removeVisualMessage(String sender, String timestamp, String content) {
+        SwingUtilities.invokeLater(() -> {
+            boolean found = false;
+            for (Component c : messageArea.getComponents()) {
+                if (c instanceof JComponent) {
+                    JComponent jc = (JComponent) c;
+                    String s = (String) jc.getClientProperty("message_sender");
+                    String t = (String) jc.getClientProperty("message_timestamp");
+                    String con = (String) jc.getClientProperty("message_content");
+                    if (sender.equals(s) && timestamp.equals(t) && content.equals(con)) {
+                        messageArea.remove(jc);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (found) {
+                messageArea.revalidate();
+                messageArea.repaint();
+            }
+        });
+    }
+
     /**
      * Append a message to the chat display.
      */
     public void appendMessage(String sender, String text, boolean isSelf) {
-        String time = LocalDateTime.now().format(TIME_FMT);
+        String timeStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        appendMessage(sender, text, timeStr, isSelf);
+    }
+
+    public void appendMessage(String sender, String text, String timestamp, boolean isSelf) {
+        String time = timestamp;
+        if (timestamp != null && timestamp.length() >= 16) {
+            time = timestamp.substring(11, 16); // "HH:mm"
+        }
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
+        wrapper.putClientProperty("message_sender", sender);
+        wrapper.putClientProperty("message_timestamp", timestamp);
+        wrapper.putClientProperty("message_content", text);
 
         // Bubble panel with rounded corners
         JPanel bubble = new JPanel(new BorderLayout(0, 4)) {
@@ -403,6 +437,43 @@ public class ChatPanel extends JPanel {
         im.put(KeyStroke.getKeyStroke("meta C"), javax.swing.text.DefaultEditorKit.copyAction);
         im.put(KeyStroke.getKeyStroke("meta A"), javax.swing.text.DefaultEditorKit.selectAllAction);
 
+        // Right click popup to delete own messages
+        if (isSelf && !isSystem) {
+            JPopupMenu popupMenu = new JPopupMenu();
+            JMenuItem deleteItem = new JMenuItem("🗑️ Xoá tin nhắn");
+            deleteItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            deleteItem.addActionListener(e -> {
+                int confirm = JOptionPane.showConfirmDialog(this, 
+                    "Bạn có chắc chắn muốn xoá tin nhắn này?", 
+                    "Xác nhận xoá", 
+                    JOptionPane.YES_NO_OPTION);
+                if (confirm == JOptionPane.YES_OPTION) {
+                    if (sendListener != null) {
+                        sendListener.onDeleteMessage(sender, timestamp, text);
+                    }
+                }
+            });
+            popupMenu.add(deleteItem);
+
+            java.awt.event.MouseAdapter popupTrigger = new java.awt.event.MouseAdapter() {
+                private void checkPopup(java.awt.event.MouseEvent e) {
+                    if (e.isPopupTrigger()) {
+                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
+                    }
+                }
+                @Override
+                public void mousePressed(java.awt.event.MouseEvent e) {
+                    checkPopup(e);
+                }
+                @Override
+                public void mouseReleased(java.awt.event.MouseEvent e) {
+                    checkPopup(e);
+                }
+            };
+            bubble.addMouseListener(popupTrigger);
+            textArea.addMouseListener(popupTrigger);
+        }
+
         try {
             StyledDocument doc = messageArea.getStyledDocument();
             messageArea.setCaretPosition(doc.getLength());
@@ -473,57 +544,199 @@ public class ChatPanel extends JPanel {
      * Display a received file message with a save button.
      */
     public void appendFileMessage(String sender, String fileName, long fileSize, byte[] fileData, boolean isSelf) {
-        StyledDocument doc = messageArea.getStyledDocument();
-        try {
-            String time = LocalDateTime.now().format(TIME_FMT);
+        String timeStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        appendFileMessage(sender, fileName, fileSize, fileData, timeStr, isSelf);
+    }
 
-            SimpleAttributeSet senderStyle = new SimpleAttributeSet();
-            StyleConstants.setForeground(senderStyle, isSelf ? new Color(100, 180, 255) : new Color(255, 180, 100));
-            StyleConstants.setBold(senderStyle, true);
-            StyleConstants.setFontSize(senderStyle, 12);
+    public void appendFileMessage(String sender, String fileName, long fileSize, byte[] fileData, String timestamp, boolean isSelf) {
+        String time = timestamp;
+        if (timestamp != null && timestamp.length() >= 16) {
+            time = timestamp.substring(11, 16); // "HH:mm"
+        }
 
-            SimpleAttributeSet timeStyle = new SimpleAttributeSet();
-            StyleConstants.setForeground(timeStyle, FG_TIME);
-            StyleConstants.setFontSize(timeStyle, 10);
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.putClientProperty("message_sender", sender);
+        wrapper.putClientProperty("message_timestamp", timestamp);
+        wrapper.putClientProperty("message_content", "📎 " + fileName);
 
-            SimpleAttributeSet fileStyle = new SimpleAttributeSet();
-            StyleConstants.setForeground(fileStyle, new Color(100, 200, 255));
-            StyleConstants.setFontSize(fileStyle, 13);
-
-            if (doc.getLength() > 0) {
-                doc.insertString(doc.getLength(), "\n", fileStyle);
+        // Bubble panel with rounded corners
+        JPanel bubble = new JPanel(new BorderLayout(0, 8)) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 16, 16);
+                g2.dispose();
             }
+        };
+        bubble.setOpaque(false);
+        bubble.setBackground(isSelf ? BG_MSG_SELF : BG_MSG_OTHER);
+        bubble.setBorder(new EmptyBorder(8, 12, 8, 12));
 
-            String senderLabel = isSelf ? "You" : sender;
-            doc.insertString(doc.getLength(), senderLabel, senderStyle);
-            doc.insertString(doc.getLength(), "  " + time + "\n", timeStyle);
-            doc.insertString(doc.getLength(), "📎 " + fileName + " (" + formatFileSize(fileSize) + ")\n", fileStyle);
+        // Header (Sender + Time)
+        JPanel headerPanel = new JPanel(new BorderLayout(10, 0));
+        headerPanel.setOpaque(false);
+        JLabel senderLabel = new JLabel(isSelf ? "You" : sender);
+        senderLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        senderLabel.setForeground(isSelf ? new Color(200, 230, 255) : new Color(255, 180, 100));
+        
+        JLabel timeLabel = new JLabel(time);
+        timeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        timeLabel.setForeground(isSelf ? new Color(180, 210, 255) : FG_HINT);
+        
+        headerPanel.add(senderLabel, BorderLayout.WEST);
+        headerPanel.add(timeLabel, BorderLayout.EAST);
+        bubble.add(headerPanel, BorderLayout.NORTH);
 
-        } catch (BadLocationException e) {
+        // File info panel (Center)
+        JPanel fileInfoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        fileInfoPanel.setOpaque(false);
+        JLabel fileIcon = new JLabel("📎");
+        fileIcon.setFont(new Font("Segoe UI", Font.PLAIN, 18));
+        fileIcon.setForeground(FG_TEXT);
+        
+        JPanel fileTextPanel = new JPanel(new GridLayout(2, 1, 0, 2));
+        fileTextPanel.setOpaque(false);
+        JLabel nameLabel = new JLabel(fileName);
+        nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        nameLabel.setForeground(FG_TEXT);
+        
+        JLabel sizeLabel = new JLabel(formatFileSize(fileSize));
+        sizeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        sizeLabel.setForeground(isSelf ? new Color(180, 210, 255) : FG_HINT);
+        
+        fileTextPanel.add(nameLabel);
+        fileTextPanel.add(sizeLabel);
+        
+        fileInfoPanel.add(fileIcon);
+        fileInfoPanel.add(fileTextPanel);
+        bubble.add(fileInfoPanel, BorderLayout.CENTER);
+
+        // Glassmorphic FlatButton helper
+        class FlatButton extends JButton {
+            FlatButton(String text, Color bg, Color fg) {
+                super(text);
+                setFont(new Font("Segoe UI", Font.BOLD, 11));
+                setBackground(bg);
+                setForeground(fg);
+                setCursor(new Cursor(Cursor.HAND_CURSOR));
+                setFocusPainted(false);
+                setBorderPainted(false);
+                setContentAreaFilled(false);
+                setOpaque(false);
+                setBorder(new EmptyBorder(6, 12, 6, 12));
+            }
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+                super.paintComponent(g2);
+                g2.dispose();
+            }
+        }
+
+        // Buttons panel (South)
+        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        actionPanel.setOpaque(false);
+
+        FlatButton openBtn = new FlatButton("📂 Open", new Color(255, 255, 255, 30), Color.WHITE);
+        openBtn.addActionListener(e -> {
+            if (fileData != null) {
+                try {
+                    String prefix = "chat_";
+                    String suffix = "";
+                    int lastDot = fileName.lastIndexOf('.');
+                    if (lastDot >= 0) {
+                        prefix = fileName.substring(0, lastDot) + "_";
+                        suffix = fileName.substring(lastDot);
+                    } else {
+                        prefix = fileName + "_";
+                    }
+                    if (prefix.length() < 3) {
+                        prefix = "file_" + prefix;
+                    }
+                    File tempFile = File.createTempFile(prefix, suffix);
+                    try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                        fos.write(fileData);
+                    }
+                    Desktop.getDesktop().open(tempFile);
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this,
+                        "Failed to open file: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "No file data available.", "Error", JOptionPane.WARNING_MESSAGE);
+            }
+        });
+
+        FlatButton saveBtn = new FlatButton("💾 Save", new Color(255, 255, 255, 30), Color.WHITE);
+        saveBtn.addActionListener(e -> {
+            if (fileData != null) {
+                saveReceivedFile(fileName, fileData);
+            } else {
+                JOptionPane.showMessageDialog(this, "No file data available.", "Error", JOptionPane.WARNING_MESSAGE);
+            }
+        });
+
+        actionPanel.add(openBtn);
+        actionPanel.add(saveBtn);
+        bubble.add(actionPanel, BorderLayout.SOUTH);
+
+        JPanel alignPanel = new JPanel(new FlowLayout(isSelf ? FlowLayout.RIGHT : FlowLayout.LEFT, 5, 2));
+        alignPanel.setOpaque(false);
+        alignPanel.add(bubble);
+
+        wrapper.add(alignPanel, BorderLayout.CENTER);
+
+        // Right click popup to delete own file messages
+        if (isSelf) {
+            JPopupMenu popupMenu = new JPopupMenu();
+            JMenuItem deleteItem = new JMenuItem("🗑️ Xoá tin nhắn");
+            deleteItem.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            deleteItem.addActionListener(e -> {
+                int confirm = JOptionPane.showConfirmDialog(this, 
+                    "Bạn có chắc chắn muốn xoá file này?", 
+                    "Xác nhận xoá", 
+                    JOptionPane.YES_NO_OPTION);
+                if (confirm == JOptionPane.YES_OPTION) {
+                    if (sendListener != null) {
+                        sendListener.onDeleteMessage(sender, timestamp, "📎 " + fileName);
+                    }
+                }
+            });
+            popupMenu.add(deleteItem);
+
+            java.awt.event.MouseAdapter popupTrigger = new java.awt.event.MouseAdapter() {
+                private void checkPopup(java.awt.event.MouseEvent e) {
+                    if (e.isPopupTrigger()) {
+                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
+                    }
+                }
+                @Override
+                public void mousePressed(java.awt.event.MouseEvent e) {
+                    checkPopup(e);
+                }
+                @Override
+                public void mouseReleased(java.awt.event.MouseEvent e) {
+                    checkPopup(e);
+                }
+            };
+            bubble.addMouseListener(popupTrigger);
+        }
+
+        try {
+            StyledDocument doc = messageArea.getStyledDocument();
+            messageArea.setCaretPosition(doc.getLength());
+            messageArea.insertComponent(wrapper);
+            doc.insertString(doc.getLength(), "\n", null);
+        } catch (Exception e) {
             e.printStackTrace();
         }
-        messageArea.setCaretPosition(doc.getLength());
-
-        // Add save button if received (not self)
-        if (!isSelf && fileData != null) {
-            JButton saveBtn = new JButton("💾 Save File");
-            saveBtn.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            saveBtn.setBackground(new Color(60, 60, 65));
-            saveBtn.setForeground(new Color(100, 200, 255));
-            saveBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-            saveBtn.addActionListener(e -> saveReceivedFile(fileName, fileData));
-
-            // Insert button into text pane
-            messageArea.setCaretPosition(messageArea.getDocument().getLength());
-            messageArea.insertComponent(saveBtn);
-
-            try {
-                StyledDocument d = messageArea.getStyledDocument();
-                d.insertString(d.getLength(), "\n", new SimpleAttributeSet());
-            } catch (BadLocationException ex) {
-                // ignore
-            }
-        }
+        messageArea.setCaretPosition(messageArea.getDocument().getLength());
     }
 
     private void saveReceivedFile(String fileName, byte[] data) {
@@ -554,13 +767,22 @@ public class ChatPanel extends JPanel {
     }
 
     public void clearMessages() {
-        SwingUtilities.invokeLater(() -> {
+        Runnable r = () -> {
             try {
                 messageArea.getDocument().remove(0, messageArea.getDocument().getLength());
             } catch (Exception ex) {
                 ex.printStackTrace();
             }
-        });
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            r.run();
+        } else {
+            try {
+                SwingUtilities.invokeAndWait(r);
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(r);
+            }
+        }
     }
 
     public void setTargetOnlineStatus(boolean online) {
@@ -594,6 +816,7 @@ public class ChatPanel extends JPanel {
         void onSendMessage(String target, String text);
         void onSendFile(String target, String fileName, byte[] data);
         void onClearHistory(String target);
+        default void onDeleteMessage(String sender, String timestamp, String content) {}
         default void onVoiceCallRequested(String target) {}
         default void onVideoCallRequested(String target) {}
         default void onLeaveGroup() {}
