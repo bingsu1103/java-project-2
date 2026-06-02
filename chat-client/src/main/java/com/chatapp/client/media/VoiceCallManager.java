@@ -31,12 +31,12 @@ public class VoiceCallManager {
     
     /**
      * Define the audio format (telephony standard).
-     * 8000 Hz, 8-bit, mono, signed, big-endian = false.
-     * Highly portable, low-bandwidth.
+     * 16000 Hz, 16-bit, mono, signed, big-endian = false.
+     * Highly portable, low-bandwidth, works on macOS CoreAudio.
      */
     public static AudioFormat getAudioFormat() {
-        float sampleRate = 8000.0f;
-        int sampleSizeInBits = 8;
+        float sampleRate = 16000.0f;
+        int sampleSizeInBits = 16;
         int channels = 1;
         boolean signed = true;
         boolean bigEndian = false;
@@ -107,7 +107,7 @@ public class VoiceCallManager {
             targetLine.open(format);
             targetLine.start();
             
-            byte[] buffer = new byte[512]; // Small buffer for low latency
+            byte[] buffer = new byte[1024]; // Low latency buffer
             while (isCalling && !Thread.currentThread().isInterrupted()) {
                 int read = targetLine.read(buffer, 0, buffer.length);
                 if (read > 0) {

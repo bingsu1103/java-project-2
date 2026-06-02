@@ -25,6 +25,7 @@ public class VideoCallManager {
     
     private boolean isCalling;
     private Thread captureThread;
+    private com.github.sarxos.webcam.Webcam activeWebcam;
     
     private final VideoPanel localPanel;
     private final VideoPanel remotePanel;
@@ -58,6 +59,13 @@ public class VideoCallManager {
         if (!isCalling) return;
         isCalling = false;
         
+        if (activeWebcam != null) {
+            try {
+                activeWebcam.close();
+            } catch (Exception ignored) {}
+            activeWebcam = null;
+        }
+        
         if (captureThread != null) {
             captureThread.interrupt();
             captureThread = null;
@@ -70,12 +78,37 @@ public class VideoCallManager {
     private void captureVideo() {
         int width = 320;
         int height = 240;
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = image.createGraphics();
         
-        // Physics for bouncing ball
-        int ballX = width / 2;
-        int ballY = height / 2;
+        try {
+            activeWebcam = com.github.sarxos.webcam.Webcam.getDefault();
+            if (activeWebcam != null) {
+                java.awt.Dimension[] sizes = activeWebcam.getViewSizes();
+                boolean sizeSupported = false;
+                for (java.awt.Dimension d : sizes) {
+                    if (d.width == width && d.height == height) {
+                        sizeSupported = true;
+                        break;
+                    }
+                }
+                if (sizeSupported) {
+                    activeWebcam.setViewSize(new java.awt.Dimension(width, height));
+                } else if (sizes.length > 0) {
+                    activeWebcam.setViewSize(sizes[0]);
+                    width = sizes[0].width;
+                    height = sizes[0].height;
+                }
+                activeWebcam.open();
+            }
+        } catch (Exception e) {
+            System.err.println("Webcam initialization failed, falling back to simulator: " + e.getMessage());
+            activeWebcam = null;
+        }
+        
+        BufferedImage simImage = new BufferedImage(320, 240, BufferedImage.TYPE_INT_RGB);
+        Graphics2D simG = simImage.createGraphics();
+        
+        int ballX = 320 / 2;
+        int ballY = 240 / 2;
         int ballDX = 4;
         int ballDY = 3;
         int ballRadius = 25;
@@ -83,88 +116,114 @@ public class VideoCallManager {
         int pulseCount = 0;
         
         while (isCalling && !Thread.currentThread().isInterrupted()) {
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            
-            // 1. Draw Background
-            g.setColor(new Color(30, 30, 35));
-            g.fillRect(0, 0, width, height);
-            
-            // 2. Draw static background grid
-            g.setColor(new Color(45, 45, 50));
-            for (int i = 0; i < width; i += 40) {
-                g.drawLine(i, 0, i, height);
-            }
-            for (int i = 0; i < height; i += 40) {
-                g.drawLine(0, i, width, i);
+            BufferedImage currentFrame = null;
+            if (activeWebcam != null && activeWebcam.isOpen()) {
+                try {
+                    currentFrame = activeWebcam.getImage();
+                } catch (Exception e) {
+                    System.err.println("Failed to get webcam frame: " + e.getMessage());
+                }
             }
             
-            // 3. Update and Draw bouncing ball
-            ballX += ballDX;
-            ballY += ballDY;
-            if (ballX - ballRadius < 0 || ballX + ballRadius > width) {
-                ballDX = -ballDX;
-                ballX = Math.max(ballRadius, Math.min(width - ballRadius, ballX));
+            BufferedImage imageToSend;
+            if (currentFrame != null) {
+                imageToSend = new BufferedImage(currentFrame.getWidth(), currentFrame.getHeight(), BufferedImage.TYPE_INT_RGB);
+                Graphics2D og = imageToSend.createGraphics();
+                og.drawImage(currentFrame, 0, 0, null);
+                
+                og.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                og.setFont(new Font("Monospaced", Font.BOLD, 12));
+                og.setColor(new Color(0, 255, 0, 220));
+                og.drawString("LIVE CAMERA: " + myUsername.toUpperCase(), 15, 25);
+                
+                String timeStr = LocalDateTime.now().format(TIME_FMT);
+                og.setColor(new Color(255, 255, 255, 180));
+                og.drawString(timeStr, 15, imageToSend.getHeight() - 15);
+                
+                pulseCount++;
+                if ((pulseCount / 3) % 2 == 0) {
+                    og.setColor(Color.RED);
+                    og.fillOval(imageToSend.getWidth() - 55, 14, 10, 10);
+                    og.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                    og.setColor(Color.WHITE);
+                    og.drawString("REC", imageToSend.getWidth() - 40, 23);
+                }
+                og.dispose();
+            } else {
+                simG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                simG.setColor(new Color(30, 30, 35));
+                simG.fillRect(0, 0, 320, 240);
+                
+                simG.setColor(new Color(45, 45, 50));
+                for (int i = 0; i < 320; i += 40) {
+                    simG.drawLine(i, 0, i, 240);
+                }
+                for (int i = 0; i < 240; i += 40) {
+                    simG.drawLine(0, i, 320, i);
+                }
+                
+                ballX += ballDX;
+                ballY += ballDY;
+                if (ballX - ballRadius < 0 || ballX + ballRadius > 320) {
+                    ballDX = -ballDX;
+                    ballX = Math.max(ballRadius, Math.min(320 - ballRadius, ballX));
+                }
+                if (ballY - ballRadius < 0 || ballY + ballRadius > 240) {
+                    ballDY = -ballDY;
+                    ballY = Math.max(ballRadius, Math.min(240 - ballRadius, ballY));
+                }
+                
+                float h = (System.currentTimeMillis() % 4000) / 4000.0f;
+                Color ballColor = Color.getHSBColor(h, 0.8f, 0.9f);
+                RadialGradientPaint rgp = new RadialGradientPaint(
+                    new Point(ballX - 5, ballY - 5), ballRadius,
+                    new float[]{0.0f, 0.8f, 1.0f},
+                    new Color[]{Color.WHITE, ballColor, ballColor.darker()}
+                );
+                simG.setPaint(rgp);
+                simG.fillOval(ballX - ballRadius, ballY - ballRadius, ballRadius * 2, ballRadius * 2);
+                
+                simG.setColor(new Color(0, 0, 0, 80));
+                simG.drawOval(ballX - ballRadius, ballY - ballRadius, ballRadius * 2, ballRadius * 2);
+                
+                for (int i = 0; i < 300; i++) {
+                    int nx = random.nextInt(320);
+                    int ny = random.nextInt(240);
+                    int nval = random.nextInt(40) + 10;
+                    simG.setColor(new Color(255, 255, 255, nval));
+                    simG.fillRect(nx, ny, 1, 1);
+                }
+                
+                int scanY = (int) ((System.currentTimeMillis() / 15) % 240);
+                simG.setColor(new Color(0, 255, 0, 25));
+                simG.fillRect(0, scanY - 2, 320, 4);
+                simG.setColor(new Color(0, 255, 0, 40));
+                simG.drawLine(0, scanY, 320, scanY);
+                
+                simG.setFont(new Font("Monospaced", Font.BOLD, 12));
+                simG.setColor(new Color(255, 255, 255, 180));
+                simG.drawString("CAMERA SIMULATOR: " + myUsername.toUpperCase(), 15, 25);
+                
+                String timeStr = LocalDateTime.now().format(TIME_FMT);
+                simG.drawString(timeStr, 15, 240 - 15);
+                
+                pulseCount++;
+                if ((pulseCount / 3) % 2 == 0) {
+                    simG.setColor(Color.RED);
+                    simG.fillOval(320 - 55, 14, 10, 10);
+                    simG.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                    simG.setColor(Color.WHITE);
+                    simG.drawString("REC", 320 - 40, 23);
+                }
+                
+                imageToSend = simImage;
             }
-            if (ballY - ballRadius < 0 || ballY + ballRadius > height) {
-                ballDY = -ballDY;
-                ballY = Math.max(ballRadius, Math.min(height - ballRadius, ballY));
-            }
             
-            // Pulsing color gradient ball
-            float h = (System.currentTimeMillis() % 4000) / 4000.0f;
-            Color ballColor = Color.getHSBColor(h, 0.8f, 0.9f);
+            localPanel.setFrame(imageToSend);
             
-            RadialGradientPaint rgp = new RadialGradientPaint(
-                new Point(ballX - 5, ballY - 5), ballRadius,
-                new float[]{0.0f, 0.8f, 1.0f},
-                new Color[]{Color.WHITE, ballColor, ballColor.darker()}
-            );
-            g.setPaint(rgp);
-            g.fillOval(ballX - ballRadius, ballY - ballRadius, ballRadius * 2, ballRadius * 2);
-            
-            // Draw border outline
-            g.setColor(new Color(0, 0, 0, 80));
-            g.drawOval(ballX - ballRadius, ballY - ballRadius, ballRadius * 2, ballRadius * 2);
-            
-            // 4. Subtle Analog static noise
-            for (int i = 0; i < 300; i++) {
-                int nx = random.nextInt(width);
-                int ny = random.nextInt(height);
-                int nval = random.nextInt(40) + 10;
-                g.setColor(new Color(255, 255, 255, nval));
-                g.fillRect(nx, ny, 1, 1);
-            }
-            
-            // 5. Draw scanning line
-            int scanY = (int) ((System.currentTimeMillis() / 15) % height);
-            g.setColor(new Color(0, 255, 0, 25));
-            g.fillRect(0, scanY - 2, width, 4);
-            g.setColor(new Color(0, 255, 0, 40));
-            g.drawLine(0, scanY, width, scanY);
-            
-            // 6. HUD info overlays
-            g.setFont(new Font("Monospaced", Font.BOLD, 12));
-            g.setColor(new Color(255, 255, 255, 180));
-            g.drawString("CAMERA: " + myUsername.toUpperCase(), 15, 25);
-            
-            String timeStr = LocalDateTime.now().format(TIME_FMT);
-            g.drawString(timeStr, 15, height - 15);
-            
-            pulseCount++;
-            if ((pulseCount / 3) % 2 == 0) {
-                g.setColor(Color.RED);
-                g.fillOval(width - 55, 14, 10, 10);
-                g.setFont(new Font("Segoe UI", Font.BOLD, 11));
-                g.setColor(Color.WHITE);
-                g.drawString("REC", width - 40, 23);
-            }
-            
-            localPanel.setFrame(image);
-            
-            // 7. Compress frame to JPEG & send
             try {
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                ImageIO.write(image, "jpg", baos);
+                ImageIO.write(imageToSend, "jpg", baos);
                 byte[] jpegData = baos.toByteArray();
                 
                 String base64Data = Base64.getEncoder().encodeToString(jpegData);
@@ -181,7 +240,14 @@ public class VideoCallManager {
             }
         }
         
-        g.dispose();
+        simG.dispose();
+        
+        if (activeWebcam != null) {
+            try {
+                activeWebcam.close();
+            } catch (Exception ignored) {}
+            activeWebcam = null;
+        }
     }
     
     public void receiveVideo(String base64Data) {
